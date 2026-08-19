@@ -1,47 +1,37 @@
 package com.ufc.app.ui
 
 import android.os.Bundle
-import android.view.TextureView
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.fragment.app.FragmentContainerView
 import androidx.lifecycle.lifecycleScope
 import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.server.DiscoveryBroadcaster
 import com.ufc.app.server.StatusServer
 import com.ufc.app.stream.RtmpPusher
-import com.ufc.app.usb.UvcCaptureManager
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var captureManager: UvcCaptureManager
-    private lateinit var rtmpPusher: RtmpPusher
+    private val rtmpPusher = RtmpPusher()
     private var statusServer: StatusServer? = null
     private var discoveryBroadcaster: DiscoveryBroadcaster? = null
+    private lateinit var cameraFragment: UfcCameraFragment
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        captureManager = UvcCaptureManager(this)
-        rtmpPusher = RtmpPusher()
+        cameraFragment = UfcCameraFragment().apply { rtmpPusher = this@MainActivity.rtmpPusher }
+        supportFragmentManager.beginTransaction()
+            .replace(R.id.cameraFragmentContainer, cameraFragment)
+            .commit()
 
-        val previewView = findViewById<TextureView>(R.id.previewView)
         val statusText = findViewById<TextView>(R.id.statusText)
-        val connectButton = findViewById<Button>(R.id.btnConnect)
         val startStreamButton = findViewById<Button>(R.id.btnStartStream)
         val stopStreamButton = findViewById<Button>(R.id.btnStopStream)
-
-        captureManager.attachPreview(previewView)
-
-        connectButton.setOnClickListener {
-            captureManager.requestPermissionAndOpen(
-                onOpened = { /* update UI kalau perlu */ },
-                onError = { e -> statusText.text = "Gagal connect: ${e.message}" }
-            )
-        }
 
         startStreamButton.setOnClickListener {
             // TODO: ambil rtmpUrl dari input user / SharedPreferences, jangan hardcode di produksi
@@ -57,7 +47,6 @@ class MainActivity : AppCompatActivity() {
             rtmpPusher.stop()
         }
 
-        // Tampilkan status secara live di layar HP juga (opsional, buat debugging)
         lifecycleScope.launch {
             StatusRepository.status.collect { status ->
                 statusText.text = buildString {
@@ -74,7 +63,7 @@ class MainActivity : AppCompatActivity() {
 
     override fun onStart() {
         super.onStart()
-        statusServer = StatusServer().apply { start(NanoHTTPD_TIMEOUT_MS, false) }
+        statusServer = StatusServer().apply { start(SOCKET_TIMEOUT_MS, false) }
         discoveryBroadcaster = DiscoveryBroadcaster(httpPort = StatusServer.DEFAULT_PORT)
             .also { it.start(lifecycleScope) }
     }
@@ -89,11 +78,9 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         rtmpPusher.stop()
-        captureManager.close()
     }
 
     companion object {
-        // NanoHTTPD start() minta timeout (ms) untuk socket; 5 detik cukup untuk polling ringan.
-        private const val NanoHTTPD_TIMEOUT_MS = 5000
+        private const val SOCKET_TIMEOUT_MS = 5000
     }
 }

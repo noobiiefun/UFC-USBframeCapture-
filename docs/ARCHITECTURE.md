@@ -6,8 +6,8 @@
 
 | Modul | Tanggung jawab |
 |---|---|
-| `usb/UvcCaptureManager` | Deteksi device UVC, minta permission USB, buka koneksi, kelola preview frame. Membungkus library UVC pihak ketiga (lihat `SETUP.md`). |
-| `stream/RtmpPusher` | Ambil frame dari capture manager, encode H.264/AAC via MediaCodec (dibungkus library push), mux ke FLV, kirim ke RTMP endpoint YouTube. |
+| `ui/UfcCameraFragment` | Extends `CameraFragment` dari library AndroidUSBCamera — deteksi device UVC, minta permission USB, kelola preview, dan memicu `captureStreamStart()` untuk mulai mengambil stream H.264/AAC yang sudah di-encode library. |
+| `stream/RtmpPusher` | Terima frame H.264/AAC terenkode dari `UfcCameraFragment`, mux ke FLV, kirim ke RTMP endpoint YouTube lewat `AusbcPusher`/`IPusher` (modul `:libpush`). |
 | `model/StreamStatus` | Data class status stream (bitrate, fps, dropped frame, koneksi, uptime) + serialisasi ke JSON. |
 | `StatusRepository` | Singleton pemegang `StateFlow<StreamStatus>` — sumber kebenaran tunggal untuk status terkini, diupdate oleh `RtmpPusher`/`UvcCaptureManager`. |
 | `server/StatusServer` | HTTP server ringan (NanoHTTPD) yang expose `GET /status` dari `StatusRepository`. Berjalan di thread/port terpisah — **read-only**, tidak pernah menyentuh pipeline capture/encode/push. |

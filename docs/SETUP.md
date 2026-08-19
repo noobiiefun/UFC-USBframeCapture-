@@ -84,3 +84,32 @@ Hasil `.exe` ada di folder `dist/`.
 - [ ] HP & PC monitor berada di jaringan WiFi yang sama
 - [ ] PC Monitor berhasil auto-discover IP HP (cek panel status)
 - [ ] Uji jalan minimal 15-30 menit untuk cek suhu HP & stabilitas sebelum live sungguhan
+
+## 4. Catatan Penting soal Library UVC (baca sebelum lanjut coding)
+
+Struktur di `android/` sudah disesuaikan dengan pola resmi library
+AndroidUSBCamera: `UfcCameraFragment` extends `CameraFragment` dan
+mengoverride `getRootView()` / `getCameraView()` / `getCameraViewContainer()`
+/ `getCameraRequest()` / `onCameraState()` — ini semua method yang
+**terdokumentasi resmi** di README library, jadi seharusnya langsung
+cocok.
+
+Yang **belum bisa saya pastikan 100%** tanpa Android Studio terbuka & Gradle
+sync: detail signature method `addEncodeDataCallBack()` (callback untuk
+ambil stream H.264/AAC) dan class `AusbcPusher`/`IPusher` (modul
+`:libpush`, untuk push RTMP) — README resmi cuma menyebut nama-nama ini ada,
+tanpa contoh kode lengkap. Sudah saya tandai jelas dengan komentar
+`TODO` + pseudo-code di `UfcCameraFragment.kt` dan `RtmpPusher.kt`.
+
+Cara menyelesaikan bagian ini:
+1. Buka project di Android Studio, tunggu Gradle sync sukses.
+2. Ketik `addEncodeDataCallBack(` di `UfcCameraFragment.kt` → Android Studio
+   akan auto-complete & tunjukkan signature aslinya.
+3. Ctrl/Cmd+klik pada `AusbcPusher` (kalau sudah diimport) untuk lihat
+   method yang tersedia, atau buka source `:libpush` di panel
+   **External Libraries**.
+4. Kalau ternyata `AusbcPusher` kurang cocok/terlalu terbatas untuk
+   kebutuhan kita, alternatif yang API-nya lebih terdokumentasi publik:
+   **pedroSG94/RootEncoder** (`rtmp-rtsp-stream-client-java`) — bisa
+   menerima raw frame dari sumber eksternal (custom source), cocok
+   dipasangkan dengan frame dari UVC capture.
