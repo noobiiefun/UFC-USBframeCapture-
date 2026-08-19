@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  TODO: ganti vendor-id / product-id sesuai capture card kamu.
+  Contoh di bawah pakai ID chipset MS2109 yang umum dipakai di
+  HDMI-to-USB capture dongle generik — WAJIB DICEK ULANG, jangan asumsi sama.
+  Cara cek: colokkan capture card via OTG lalu lihat Logcat saat event
+  USB_DEVICE_ATTACHED, atau cek "lsusb" di PC kalau device-nya identik.
+-->
+<resources>
+    <usb-device vendor-id="21325" product-id="8457" />
+</resources>
