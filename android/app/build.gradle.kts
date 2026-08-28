@@ -41,8 +41,8 @@ dependencies {
 
     // TODO: sesuaikan versi terbaru dari repo AndroidUSBCamera / fork ernestp
     // Modul ini menyediakan UVC capture + hardware encode + RTMP push (libpush)
-    implementation("com.github.jiangdongguo.AndroidUSBCamera:libausbc:3.3.3")
-    implementation("com.github.jiangdongguo.AndroidUSBCamera:libpush:3.3.3")
+    implementation("com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6")
+    implementation("com.github.chenyeju295.AndroidUSBCamera:libpush:3.3.6")
 
     // HTTP server ringan untuk endpoint /status
     implementation("org.nanohttpd:nanohttpd:2.3.1")

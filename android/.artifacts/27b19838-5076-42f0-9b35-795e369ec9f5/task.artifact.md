@@ -1,0 +1,4 @@
+- [x] Konfigurasi `gradle.properties` untuk AndroidX
+- [/] Update dependency `AndroidUSBCamera` di `app/build.gradle.kts`
+- [ ] Jalankan Gradle Sync / Build untuk verifikasi
+- [ ] Selesaikan Walkthrough
