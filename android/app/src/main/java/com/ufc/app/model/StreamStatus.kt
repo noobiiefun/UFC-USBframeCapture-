@@ -12,6 +12,8 @@ data class StreamStatus(
     val resolution: String = "-",
     val fps: Int = 0,
     val bitrateKbps: Int = 0,
+    val uploadSpeedKbps: Int = 0,
+    val downloadSpeedKbps: Int = 0,
     val droppedFrames: Long = 0,
     val uptimeSec: Long = 0
 ) {
@@ -22,6 +24,8 @@ data class StreamStatus(
         obj.put("resolution", resolution)
         obj.put("fps", fps)
         obj.put("bitrateKbps", bitrateKbps)
+        obj.put("uploadSpeedKbps", uploadSpeedKbps)
+        obj.put("downloadSpeedKbps", downloadSpeedKbps)
         obj.put("droppedFrames", droppedFrames)
         obj.put("uptimeSec", uptimeSec)
         obj.put("timestamp", System.currentTimeMillis() / 1000)

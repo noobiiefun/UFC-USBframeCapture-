@@ -51,10 +51,20 @@ class DiscoveryBroadcaster(
         job = null
     }
 
-    // TODO: ambil IP WiFi aktual dari WifiManager, jangan hardcode.
-    // Contoh: (context.getSystemService(WIFI_SERVICE) as WifiManager)
-    //           .connectionInfo.ipAddress diformat ke dotted-decimal.
-    // Sementara PC Monitor tetap bisa mengandalkan source address paket UDP
-    // yang diterima (packet.address) sebagai fallback kalau field ini kosong.
-    private fun localIpOrPlaceholder(): String = "0.0.0.0"
+    private fun localIpOrPlaceholder(): String {
+        return try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            for (inter in interfaces) {
+                val addrs = inter.inetAddresses
+                for (addr in addrs) {
+                    if (!addr.isLoopbackAddress && addr is java.net.Inet4Address) {
+                        return addr.hostAddress ?: "0.0.0.0"
+                    }
+                }
+            }
+            "0.0.0.0"
+        } catch (e: Exception) {
+            "0.0.0.0"
+        }
+    }
 }
