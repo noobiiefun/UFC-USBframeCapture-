@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace = "com.ufc.app"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.ufc.app"
         minSdk = 26        // USB Host API stabil mulai Android 8+
-        targetSdk = 34
+        targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-skeleton"
     }
@@ -27,6 +27,7 @@ android {
     }
     kotlinOptions {
         jvmTarget = "17"
+        freeCompilerArgs += listOf("-Xcontext-receivers")
     }
 }
 
@@ -39,10 +40,9 @@ dependencies {
     // Coroutines + StateFlow untuk StatusRepository
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
-    // TODO: sesuaikan versi terbaru dari repo AndroidUSBCamera / fork ernestp
-    // Modul ini menyediakan UVC capture + hardware encode + RTMP push (libpush)
-    implementation("com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6")
-    implementation("com.github.chenyeju295.AndroidUSBCamera:libpush:3.3.6")
+    // Pustaka AndroidUSBCamera (AUSBC) - Fork ernestp stabil untuk Android 16+
+    // Modul libausbc mencakup UVC capture, encoding, dan pusher (RTMP)
+    implementation("com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0")
 
     // HTTP server ringan untuk endpoint /status
     implementation("org.nanohttpd:nanohttpd:2.3.1")

@@ -4,10 +4,9 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import com.jiangdg.ausbc.CameraFragment
+import com.jiangdg.ausbc.base.CameraFragment
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
-import com.jiangdg.ausbc.camera.bean.CameraEncodeData
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
@@ -50,7 +49,7 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     override fun onCameraState(
-        self: com.jiangdg.ausbc.callback.ICameraStateCallBack.ICamera,
+        self: com.jiangdg.ausbc.MultiCameraClient.ICamera,
         code: ICameraStateCallBack.State,
         msg: String?
     ) {
@@ -69,10 +68,25 @@ class UfcCameraFragment : CameraFragment() {
         }
     }
 
-    override fun initEncodeDataCallBack() {
-        addEncodeDataCallBack(object : IEncodeDataCallBack {
-            override fun onEncodeData(data: CameraEncodeData) {
-                rtmpPusher?.onEncodedData(data)
+    override fun initData() {
+        super.initData()
+        setEncodeDataCallBack(object : IEncodeDataCallBack {
+            override fun onEncodeData(
+                type: IEncodeDataCallBack.DataType,
+                buffer: java.nio.ByteBuffer,
+                offset: Int,
+                size: Int,
+                timestamp: Long
+            ) {
+                // Konversi DataType enum ke Int untuk RtmpPusher
+                // Berdasarkan AusbcPusher 3.6.0: 0 untuk Audio, 1 untuk Video
+                val typeInt = when (type) {
+                    IEncodeDataCallBack.DataType.AAC -> 0
+                    else -> 1 // H264, H264_KEY, H264_SPS
+                }
+                val data = ByteArray(size)
+                buffer.get(data, offset, size)
+                rtmpPusher?.onEncodedData(typeInt, data, size, timestamp)
             }
         })
     }

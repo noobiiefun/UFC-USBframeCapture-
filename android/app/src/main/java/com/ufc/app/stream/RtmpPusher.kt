@@ -1,8 +1,10 @@
 package com.ufc.app.stream
 
-import com.jiangdg.ausbc.camera.bean.CameraEncodeData
-import com.jiangdg.ausbc.push.AusbcPusher
-import com.jiangdg.ausbc.push.IPusher
+import android.content.Context
+import com.jiangdg.ausbc.pusher.AusbcPusher
+import com.jiangdg.ausbc.pusher.IPusher
+import com.jiangdg.ausbc.pusher.callback.IStateCallback
+import com.jiangdg.ausbc.pusher.config.AusbcConfig
 import com.ufc.app.StatusRepository
 import java.nio.ByteBuffer
 
@@ -28,23 +30,26 @@ class RtmpPusher {
         this.config = config
     }
 
-    fun start() {
+    fun start(context: Context) {
         if (isPushing) return
         require(config.rtmpUrl.isNotBlank()) { "RTMP URL belum diisi" }
 
-        pusher = AusbcPusher().apply {
-            setPusherCallBack(object : IPusher.OnPusherCallBack {
-                override fun onPusherStatus(status: IPusher.PusherStatus) {
-                    when (status) {
-                        IPusher.PusherStatus.CONNECTED -> markConnected(true)
-                        IPusher.PusherStatus.DISCONNECTED, 
-                        IPusher.PusherStatus.ERROR -> markConnected(false)
-                        else -> {}
-                    }
-                }
-            })
-            startPusher(config.rtmpUrl)
+        val ausbcConfig = AusbcConfig().apply {
+            setVideoWidth(config.width)
+            setVideoHeight(config.height)
         }
+
+        AusbcPusher.init(context, ausbcConfig, object : IStateCallback {
+            override fun onState(state: IStateCallback.State, msg: String?) {
+                when (state) {
+                    IStateCallback.State.SUCCESS -> markConnected(true)
+                    IStateCallback.State.STOP,
+                    IStateCallback.State.ERROR -> markConnected(false)
+                    else -> {}
+                }
+            }
+        })
+        AusbcPusher.start(config.rtmpUrl)
 
         isPushing = true
         StatusRepository.update {
@@ -58,17 +63,17 @@ class RtmpPusher {
 
     fun stop() {
         isPushing = false
-        pusher?.stopPusher()
-        pusher = null
+        AusbcPusher.stop()
         markConnected(false)
     }
 
     /**
      * Dipanggil UfcCameraFragment setiap ada frame H.264/AAC baru.
+     * type: 0 untuk audio, 1 untuk video (berdasarkan AusbcPusher 3.6.0)
      */
-    fun onEncodedData(data: CameraEncodeData) {
+    fun onEncodedData(type: Int, data: ByteArray, size: Int, pts: Long) {
         if (!isPushing) return
-        pusher?.pushData(data.data, data.type)
+        AusbcPusher.pushStream(type, data, size, pts)
     }
 
     private fun markConnected(connected: Boolean) {

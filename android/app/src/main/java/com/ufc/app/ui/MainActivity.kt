@@ -86,7 +86,7 @@ class MainActivity : AppCompatActivity() {
                     rtmpUrl = streamUrl
                 )
             )
-            rtmpPusher.start()
+            rtmpPusher.start(this)
             startService(Intent(this, StreamService::class.java))
         }
 
