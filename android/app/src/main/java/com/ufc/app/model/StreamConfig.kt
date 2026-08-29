@@ -32,5 +32,9 @@ class StreamConfig(context: Context) {
         get() = prefs.getInt("bitrate", 2500)
         set(value) = prefs.edit().putInt("bitrate", value).apply()
 
+    var isPortrait: Boolean
+        get() = prefs.getBoolean("is_portrait", false)
+        set(value) = prefs.edit().putBoolean("is_portrait", value).apply()
+
     val fullUrl: String get() = "$rtmpUrl$streamKey"
 }

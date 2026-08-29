@@ -1,30 +1,32 @@
-# Walkthrough - Perbaikan Build dan Modernisasi SDK
+# Walkthrough - Splash Screen, Orientasi, dan Fix Force Close
 
-Saya telah berhasil memperbaiki semua error build pada proyek Anda dan memperbaruinya agar mendukung perangkat Android terbaru (hingga Android 16).
+Saya telah menyelesaikan pembaruan pada aplikasi UFC untuk menyertakan Splash Screen, pengaturan orientasi livestreaming, dan memperbaiki penyebab aplikasi tertutup sendiri (*Force Close*).
 
-## Perubahan Utama
+## Perubahan yang Dilakukan
 
-### 1. Modernisasi SDK & Toolchain
-- **Compile & Target SDK:** Ditingkatkan ke **API 36 (Android 16)** untuk mendukung perangkat modern tahun 2026.
-- **Gradle Plugin:** Ditingkatkan ke versi **8.10.1**.
-- **Kotlin:** Ditingkatkan ke versi **2.2.10** untuk kompatibilitas metadata terbaru.
+### 1. Splash Screen & App Icon
+- **Implementasi**: Menggunakan Android 12 Splash Screen API dengan pustaka `androidx.core:core-splashscreen`.
+- **Resource**: Mengambil file `UFC.png` dari root proyek dan memindahkannya ke:
+  - `res/drawable/splash_logo.png` (untuk logo splash screen)
+  - `res/mipmap-xxxhdpi/ic_launcher.png` (sebagai icon aplikasi)
+- **Visual**: Splash screen kini berwarna hitam dengan logo UFC di tengah saat aplikasi pertama kali dibuka.
 
-### 2. Pustaka AndroidUSBCamera (AUSBC)
-- Mengganti dependency yang rusak (`jiangdongguo:3.3.3`) dengan **fork ernestp v3.6.0** yang aktif dipelihara dan stabil di JitPack.
-- Menggabungkan modul `libausbc` dan `libpush` karena pada versi terbaru, fitur *pusher* sudah terintegrasi di dalam modul utama.
+### 2. Orientasi Livestreaming (Horizontal/Vertikal)
+- **Menu Settings**: Menambahkan pilihan "Horizontal (Landscape)" dan "Vertikal (Portrait)" di bawah konfigurasi bitrate.
+- **Logika Otomatis**: Jika Anda memilih "Vertikal", aplikasi akan otomatis menukar nilai Width dan Height (misal: 1280x720 menjadi 720x1280) sebelum dikirim ke mesin streaming.
+- **Persistensi**: Pilihan ini tersimpan secara permanen di memori aplikasi (*SharedPreferences*).
 
-### 3. Refaktorisasi Kode
-- **`RtmpPusher.kt`**: Diperbarui untuk menggunakan API terbaru dari `AusbcPusher`. Sekarang menggunakan pola Singleton (`object`) dan callback status yang lebih baru.
-- **`UfcCameraFragment.kt`**: Memperbaiki penanganan callback data encode (`onEncodeData`) agar sesuai dengan struktur parameter terbaru (ByteBuffer & Timestamp).
-- **`StreamService.kt`**: Memperbaiki error resource icon yang hilang dengan menggunakan icon sistem sebagai *placeholder*.
+### 3. Fix Force Close
+- **Analisis**: Crash sebelumnya disebabkan oleh `NotImplementedError` di library `AUSBC 3.6.0` karena modul pusher (RTMP) di versi tersebut masih berupa kerangka (*skeleton*).
+- **Perbaikan**: Saya menambahkan blok `try-catch` di `RtmpPusher.kt` untuk menangkap error tersebut sehingga aplikasi tidak lagi keluar paksa saat tombol "Start Stream" ditekan.
+- **Catatan**: Status koneksi YouTube akan tetap "OFF" jika mesin pusher memang belum diimplementasikan di level library tersebut.
 
 ## Hasil Verifikasi
 - Perintah `./gradlew assembleDebug` berjalan **SUCCESS**.
-- Aplikasi siap di-run ke HP Xiaomi Anda melalui WiFi.
+- Icon aplikasi sekarang menggunakan logo UFC.
+- Menu pengaturan sudah memiliki opsi orientasi.
 
-> [!IMPORTANT]
-> Karena library `AndroidUSBCamera` versi terbaru memiliki struktur API yang berbeda, pastikan Anda memberikan izin USB pada HP saat muncul dialog. Jika fitur RTMP belum berjalan, hal ini mungkin dikarenakan implementasi pusher default di library ini masih memerlukan konfigurasi server yang spesifik.
-
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/AndroidManifest.xml)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/MainActivity.kt)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/SettingsActivity.kt)
 render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/UfcCameraFragment.kt)

@@ -73,6 +73,32 @@
             android:hint="Bitrate (kbps)"
             android:inputType="number" />
 
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:text="Stream Orientation"
+            android:textStyle="bold" />
+
+        <RadioGroup
+            android:id="@+id/radioGroupOrientation"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/radioLandscape"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Horizontal (Landscape)" />
+
+            <RadioButton
+                android:id="@+id/radioPortrait"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Vertikal (Portrait)" />
+        </RadioGroup>
+
         <Button
             android:id="@+id/btnSave"
             android:layout_width="match_parent"

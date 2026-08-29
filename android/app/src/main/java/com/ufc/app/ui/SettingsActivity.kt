@@ -3,6 +3,8 @@ package com.ufc.app.ui
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.ufc.app.R
@@ -24,6 +26,9 @@ class SettingsActivity : AppCompatActivity() {
         val editHeight = findViewById<EditText>(R.id.editHeight)
         val editFps = findViewById<EditText>(R.id.editFps)
         val editBitrate = findViewById<EditText>(R.id.editBitrate)
+        val radioGroupOrientation = findViewById<RadioGroup>(R.id.radioGroupOrientation)
+        val radioLandscape = findViewById<RadioButton>(R.id.radioLandscape)
+        val radioPortrait = findViewById<RadioButton>(R.id.radioPortrait)
         val btnSave = findViewById<Button>(R.id.btnSave)
 
         // Load existing
@@ -33,6 +38,11 @@ class SettingsActivity : AppCompatActivity() {
         editHeight.setText(config.resolutionHeight.toString())
         editFps.setText(config.fps.toString())
         editBitrate.setText(config.bitrateKbps.toString())
+        if (config.isPortrait) {
+            radioPortrait.isChecked = true
+        } else {
+            radioLandscape.isChecked = true
+        }
 
         btnSave.setOnClickListener {
             config.rtmpUrl = editRtmpUrl.text.toString()
@@ -41,6 +51,7 @@ class SettingsActivity : AppCompatActivity() {
             config.resolutionHeight = editHeight.text.toString().toIntOrNull() ?: 720
             config.fps = editFps.text.toString().toIntOrNull() ?: 30
             config.bitrateKbps = editBitrate.text.toString().toIntOrNull() ?: 2500
+            config.isPortrait = radioPortrait.isChecked
 
             Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show()
             finish()

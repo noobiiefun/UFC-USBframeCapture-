@@ -8,6 +8,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.ufc.app.R
 import com.ufc.app.StatusRepository
@@ -31,6 +32,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -77,10 +79,28 @@ class MainActivity : AppCompatActivity() {
                 return@setOnClickListener
             }
 
+            var finalWidth = config.resolutionWidth
+            var finalHeight = config.resolutionHeight
+            if (config.isPortrait) {
+                // Swap jika portrait
+                if (finalWidth > finalHeight) {
+                    val temp = finalWidth
+                    finalWidth = finalHeight
+                    finalHeight = temp
+                }
+            } else {
+                // Pastikan landscape
+                if (finalHeight > finalWidth) {
+                    val temp = finalWidth
+                    finalWidth = finalHeight
+                    finalHeight = temp
+                }
+            }
+
             rtmpPusher.configure(
                 RtmpPusher.Config(
-                    width = config.resolutionWidth,
-                    height = config.resolutionHeight,
+                    width = finalWidth,
+                    height = finalHeight,
                     fps = config.fps,
                     videoBitrateKbps = config.bitrateKbps,
                     rtmpUrl = streamUrl

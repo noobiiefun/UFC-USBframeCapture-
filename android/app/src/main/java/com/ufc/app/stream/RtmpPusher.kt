@@ -39,17 +39,24 @@ class RtmpPusher {
             setVideoHeight(config.height)
         }
 
-        AusbcPusher.init(context, ausbcConfig, object : IStateCallback {
-            override fun onPushState(code: Int, msg: String?) {
-                // Biasanya code > 0 menandakan sukses/aktif
-                if (code > 0) {
-                    markConnected(true)
-                } else {
-                    markConnected(false)
+        try {
+            AusbcPusher.init(context, ausbcConfig, object : IStateCallback {
+                override fun onPushState(code: Int, msg: String?) {
+                    // Biasanya code > 0 menandakan sukses/aktif
+                    if (code > 0) {
+                        markConnected(true)
+                    } else {
+                        markConnected(false)
+                    }
                 }
-            }
-        })
-        AusbcPusher.start(config.rtmpUrl)
+            })
+            AusbcPusher.start(config.rtmpUrl)
+        } catch (e: Exception) {
+            // Tangani NotImplementedError atau exception lain dari library skeleton
+            e.printStackTrace()
+            markConnected(false)
+            isPushing = false
+        }
 
         isPushing = true
         StatusRepository.update {

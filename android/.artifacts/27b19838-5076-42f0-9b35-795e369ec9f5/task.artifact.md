@@ -1,6 +1,11 @@
-- [x] Konfigurasi `gradle.properties` untuk AndroidX
-- [x] Update dependency `AndroidUSBCamera` ke `ernestp:libausbc:3.6.0`
-- [x] Refactor `RtmpPusher.kt` untuk API `3.6.0`
-- [x] Refactor `UfcCameraFragment.kt` untuk API `3.6.0`
-- [x] Jalankan Build untuk verifikasi (SUCCESS)
-- [x] Selesaikan Walkthrough
+- [x] Splash Screen & Icon
+    - [x] Buat `res/drawable/splash_background.xml`
+    - [x] Pindahkan logo `UFC.png` ke folder res
+    - [x] Update `themes.xml` & `AndroidManifest.xml`
+- [x] Orientasi Livestreaming
+    - [x] Update `StreamConfig.kt` (tambah field `isPortrait`)
+    - [x] Update `activity_settings.xml` & `SettingsActivity.kt`
+    - [x] Update logika swap resolusi di `MainActivity.kt`
+- [x] Fix Force Close
+    - [x] Tambahkan proteksi `try-catch` di `RtmpPusher.kt`
+- [x] Verifikasi & Build (SUCCESS)

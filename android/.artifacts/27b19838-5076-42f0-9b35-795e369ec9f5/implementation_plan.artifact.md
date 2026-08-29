@@ -1,37 +1,44 @@
-# Memperbaiki Error Build dan Dependency
+# Rencana Implementasi Splash Screen, Orientasi, dan Fix Force Close
 
-Masalah utama yang menyebabkan error saat Anda menjalankan aplikasi adalah konfigurasi AndroidX yang belum aktif dan kegagalan dalam mengunduh library `AndroidUSBCamera` dari JitPack.
+Tugas ini bertujuan untuk menambahkan Splash Screen, fitur pemilihan orientasi livestreaming (Horizontal/Vertikal), dan memperbaiki penyebab crash (*Force Close*).
 
-## Masalah yang Ditemukan
+## User Review Required
 
-1.  **AndroidX Tidak Aktif**: Proyek menggunakan library AndroidX tetapi properti `android.useAndroidX` tidak diaktifkan di file `gradle.properties`.
-2.  **Dependency Missing (JitPack Error)**: Library `com.github.jiangdongguo.AndroidUSBCamera` versi `3.3.3` gagal di-build oleh server JitPack karena ketidaksesuaian versi Gradle pada library tersebut. Hal ini menyebabkan error "Could not find..." saat proses sinkronisasi/build.
+> [!IMPORTANT]
+> **Penyebab Force Close:** Crash terjadi karena fungsi `AusbcPusher` di library `3.6.0` yang kita gunakan masih berupa skeleton (belum ada implementasi RTMP aslinya/`TODO`). Saya akan memperbaiki kode agar tidak crash, namun untuk benar-benar melakukan *streaming* ke YouTube, kita memerlukan pustaka RTMP tambahan.
 
 ## Perubahan yang Diusulkan
 
-### Konfigurasi Proyek
+### 1. Splash Screen & Icon
+Saya akan menggunakan file `UFC.png` yang ada di root folder sebagai icon aplikasi dan logo splash screen.
+- **Resources**: Membuat folder `res/drawable` dan `res/mipmap-xxxhdpi`.
+- **Theme**: Menambahkan `Theme.App.Starting` di `themes.xml` untuk menampilkan logo saat aplikasi dibuka.
 
-#### [NEW] [gradle.properties](file:///F:/coding/UFC-USBframeCapture-/android/gradle.properties)
-Saya telah membuat file ini dengan konfigurasi AndroidX:
-```properties
-android.useAndroidX=true
-android.enableJetifier=true
-```
+### 2. Orientasi Livestreaming
+- **Settings**: Menambahkan opsi "Orientation" (Landscape/Portrait) di menu Pengaturan.
+- **Logika**: Jika "Portrait" dipilih, resolusi akan otomatis ditukar (misal: 1280x720 menjadi 720x1280).
+- **Manifest**: Mengunci `MainActivity` agar tetap responsif namun menghandle perubahan konfigurasi secara manual.
 
-#### [MODIFY] [app/build.gradle.kts](file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
-Mengganti library `AndroidUSBCamera` yang bermasalah dengan *fork* yang sudah diperbaiki (`chenyeju295`) dan menggunakan versi stabil terbaru (`3.3.6`).
+### 3. Perbaikan Force Close
+- **`RtmpPusher.kt`**: Menghapus inisialisasi pusher yang belum terimplementasi di library untuk mencegah `NotImplementedError`. Saya akan menambahkan mekanisme *safe-call* dan peringatan jika fitur streaming dipicu tanpa mesin pusher yang valid.
 
-```diff
--    implementation("com.github.jiangdongguo.AndroidUSBCamera:libausbc:3.3.3")
--    implementation("com.github.jiangdongguo.AndroidUSBCamera:libpush:3.3.3")
-+    implementation("com.github.chenyeju295.AndroidUSBCamera:libausbc:3.3.6")
-+    implementation("com.github.chenyeju295.AndroidUSBCamera:libpush:3.3.6")
-```
+## Rincian File yang Diubah
+
+### Resources & UI
+#### [NEW] [splash_background.xml](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/res/drawable/splash_background.xml)
+#### [MODIFY] [activity_settings.xml](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/res/layout/activity_settings.xml)
+#### [MODIFY] [themes.xml](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/res/values/themes.xml)
+
+### Logika & Konfigurasi
+#### [MODIFY] [StreamConfig.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/model/StreamConfig.kt)
+#### [MODIFY] [SettingsActivity.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/SettingsActivity.kt)
+#### [MODIFY] [RtmpPusher.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
+#### [MODIFY] [AndroidManifest.xml](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/AndroidManifest.xml)
 
 ## Rencana Verifikasi
 
-### Otomatis
-1.  Menjalankan perintah build `./gradlew assembleDebug` untuk memastikan semua dependency berhasil diunduh dan kode dapat dikompilasi tanpa error.
-
 ### Manual
-1.  Menjalankan aplikasi ke HP Xiaomi Anda melalui WiFi Debugging setelah build berhasil.
+1.  Buka aplikasi dan pastikan Splash Screen muncul dengan logo UFC.
+2.  Masuk ke Pengaturan, ubah orientasi ke Portrait, dan simpan.
+3.  Klik "Start Stream" dan pastikan aplikasi tidak lagi Force Close.
+4.  Cek logcat untuk memastikan resolusi yang dikirim sudah tertukar (720x1280).

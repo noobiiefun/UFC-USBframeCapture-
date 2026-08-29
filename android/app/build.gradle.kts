@@ -46,4 +46,5 @@ dependencies {
 
     // HTTP server ringan untuk endpoint /status
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+    implementation("androidx.core:core-splashscreen:1.0.1")
 }
