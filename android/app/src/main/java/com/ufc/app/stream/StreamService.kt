@@ -14,7 +14,6 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
-import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.ui.MainActivity
 

@@ -2,6 +2,7 @@ package com.ufc.app.ui
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.content.pm.ActivityInfo
 import android.os.Bundle
 import android.view.MotionEvent
 import android.view.View
@@ -34,9 +35,17 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        
+        config = StreamConfig(this)
+        // Kunci orientasi layar sesuai setting (mencegah auto-rotate sensor)
+        requestedOrientation = if (config.isPortrait) {
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+
         setContentView(R.layout.activity_main)
 
-        config = StreamConfig(this)
         cameraFragment = UfcCameraFragment().apply { rtmpPusher = this@MainActivity.rtmpPusher }
         supportFragmentManager.beginTransaction()
             .replace(R.id.cameraFragmentContainer, cameraFragment)
@@ -48,6 +57,7 @@ class MainActivity : AppCompatActivity() {
         val startStreamButton = findViewById<Button>(R.id.btnStartStream)
         val stopStreamButton = findViewById<Button>(R.id.btnStopStream)
         val settingsButton = findViewById<Button>(R.id.btnSettings)
+        val rotateButton = findViewById<Button>(R.id.btnRotate)
 
         // Drag logic for overlay
         draggableOverlay.setOnTouchListener { view, event ->
@@ -69,6 +79,15 @@ class MainActivity : AppCompatActivity() {
 
         settingsButton.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
+        }
+
+        rotateButton.setOnClickListener {
+            config.isPortrait = !config.isPortrait
+            requestedOrientation = if (config.isPortrait) {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
         }
 
         startStreamButton.setOnClickListener {

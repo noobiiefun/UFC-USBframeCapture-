@@ -11,6 +11,7 @@ import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
 import com.ufc.app.StatusRepository
+import com.ufc.app.model.StreamConfig
 import com.ufc.app.stream.RtmpPusher
 
 /**
@@ -37,9 +38,27 @@ class UfcCameraFragment : CameraFragment() {
     override fun getCameraViewContainer(): ViewGroup = container
 
     override fun getCameraRequest(): CameraRequest {
+        val config = StreamConfig(requireContext())
+        var width = config.resolutionWidth
+        var height = config.resolutionHeight
+        
+        if (config.isPortrait) {
+            if (width > height) {
+                val temp = width
+                width = height
+                height = temp
+            }
+        } else {
+            if (height > width) {
+                val temp = width
+                width = height
+                height = temp
+            }
+        }
+
         return CameraRequest.Builder()
-            .setPreviewWidth(1280)
-            .setPreviewHeight(720)
+            .setPreviewWidth(width)
+            .setPreviewHeight(height)
             .setRenderMode(CameraRequest.RenderMode.OPENGL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
             .setAudioSource(CameraRequest.AudioSource.SOURCE_AUTO)

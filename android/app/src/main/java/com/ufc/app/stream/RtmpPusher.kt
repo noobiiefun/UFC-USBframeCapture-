@@ -24,7 +24,6 @@ class RtmpPusher {
 
     private var config: Config = Config()
     private var isPushing = false
-    private var pusher: IPusher? = null
 
     fun configure(config: Config) {
         this.config = config
@@ -51,8 +50,8 @@ class RtmpPusher {
                 }
             })
             AusbcPusher.start(config.rtmpUrl)
-        } catch (e: Exception) {
-            // Tangani NotImplementedError atau exception lain dari library skeleton
+        } catch (e: Throwable) {
+            // Tangani NotImplementedError (Error) atau exception lain dari library skeleton
             e.printStackTrace()
             markConnected(false)
             isPushing = false

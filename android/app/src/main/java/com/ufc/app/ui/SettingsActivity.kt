@@ -4,7 +4,6 @@ import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
 import android.widget.RadioButton
-import android.widget.RadioGroup
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import com.ufc.app.R
@@ -26,7 +25,6 @@ class SettingsActivity : AppCompatActivity() {
         val editHeight = findViewById<EditText>(R.id.editHeight)
         val editFps = findViewById<EditText>(R.id.editFps)
         val editBitrate = findViewById<EditText>(R.id.editBitrate)
-        val radioGroupOrientation = findViewById<RadioGroup>(R.id.radioGroupOrientation)
         val radioLandscape = findViewById<RadioButton>(R.id.radioLandscape)
         val radioPortrait = findViewById<RadioButton>(R.id.radioPortrait)
         val btnSave = findViewById<Button>(R.id.btnSave)

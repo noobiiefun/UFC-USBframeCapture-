@@ -11,10 +11,10 @@ Saya telah menyelesaikan pembaruan pada aplikasi UFC untuk menyertakan Splash Sc
   - `res/mipmap-xxxhdpi/ic_launcher.png` (sebagai icon aplikasi)
 - **Visual**: Splash screen kini berwarna hitam dengan logo UFC di tengah saat aplikasi pertama kali dibuka.
 
-### 2. Orientasi Livestreaming (Horizontal/Vertikal)
-- **Menu Settings**: Menambahkan pilihan "Horizontal (Landscape)" dan "Vertikal (Portrait)" di bawah konfigurasi bitrate.
-- **Logika Otomatis**: Jika Anda memilih "Vertikal", aplikasi akan otomatis menukar nilai Width dan Height (misal: 1280x720 menjadi 720x1280) sebelum dikirim ke mesin streaming.
-- **Persistensi**: Pilihan ini tersimpan secara permanen di memori aplikasi (*SharedPreferences*).
+### 2. Orientasi Livestreaming (Manual Rotate)
+- **Tombol Rotate**: Saya menambahkan tombol **"Rotate"** di layar utama (di sebelah tombol Set). Tombol ini digunakan untuk memutar orientasi aplikasi secara manual.
+- **Kunci Orientasi**: Aplikasi sekarang **terkunci** pada orientasi yang Anda pilih. Artinya, HP tidak akan berputar otomatis mengikuti sensor (mencegah *auto-rotate* yang tidak diinginkan).
+- **Hasil Maksimal YouTube**: Logika penukaran resolusi tetap berjalan di latar belakang. Jika mode Horizontal aktif, resolusi **1280x720** akan dikirim ke YouTube untuk hasil lebar yang maksimal.
 
 ### 3. Fix Force Close
 - **Analisis**: Crash sebelumnya disebabkan oleh `NotImplementedError` di library `AUSBC 3.6.0` karena modul pusher (RTMP) di versi tersebut masih berupa kerangka (*skeleton*).
