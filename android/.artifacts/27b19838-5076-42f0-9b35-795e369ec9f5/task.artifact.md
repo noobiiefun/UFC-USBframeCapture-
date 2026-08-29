@@ -1,6 +1,6 @@
 - [x] Konfigurasi `gradle.properties` untuk AndroidX
 - [x] Update dependency `AndroidUSBCamera` ke `ernestp:libausbc:3.6.0`
-- [/] Refactor `RtmpPusher.kt` untuk API `3.6.0`
-- [ ] Refactor `UfcCameraFragment.kt` untuk API `3.6.0`
-- [ ] Jalankan Build untuk verifikasi
-- [ ] Selesaikan Walkthrough
+- [x] Refactor `RtmpPusher.kt` untuk API `3.6.0`
+- [x] Refactor `UfcCameraFragment.kt` untuk API `3.6.0`
+- [x] Jalankan Build untuk verifikasi (SUCCESS)
+- [x] Selesaikan Walkthrough

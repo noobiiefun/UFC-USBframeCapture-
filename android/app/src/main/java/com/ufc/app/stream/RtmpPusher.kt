@@ -40,12 +40,12 @@ class RtmpPusher {
         }
 
         AusbcPusher.init(context, ausbcConfig, object : IStateCallback {
-            override fun onState(state: IStateCallback.State, msg: String?) {
-                when (state) {
-                    IStateCallback.State.SUCCESS -> markConnected(true)
-                    IStateCallback.State.STOP,
-                    IStateCallback.State.ERROR -> markConnected(false)
-                    else -> {}
+            override fun onPushState(code: Int, msg: String?) {
+                // Biasanya code > 0 menandakan sukses/aktif
+                if (code > 0) {
+                    markConnected(true)
+                } else {
+                    markConnected(false)
                 }
             }
         })
