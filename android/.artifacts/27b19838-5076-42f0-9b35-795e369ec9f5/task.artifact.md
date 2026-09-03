@@ -1,11 +1,6 @@
-- [x] Splash Screen & Icon
-    - [x] Buat `res/drawable/splash_background.xml`
-    - [x] Pindahkan logo `UFC.png` ke folder res
-    - [x] Update `themes.xml` & `AndroidManifest.xml`
-- [x] Orientasi Livestreaming
-    - [x] Update `StreamConfig.kt` (tambah field `isPortrait`)
-    - [x] Update `activity_settings.xml` & `SettingsActivity.kt`
-    - [x] Update logika swap resolusi di `MainActivity.kt`
-- [x] Fix Force Close
-    - [x] Tambahkan proteksi `try-catch` di `RtmpPusher.kt`
-- [x] Verifikasi & Build (SUCCESS)
+- [ ] Perbaikan Stabilitas & SDK
+    - [ ] Downgrade SDK ke API 34 di `app/build.gradle.kts`
+    - [ ] Fix `UfcCameraFragment.kt` (View reuse & safe cleanup)
+    - [ ] Fix `MainActivity.kt` (Safe orientation logic)
+    - [ ] Lock orientation di `AndroidManifest.xml`
+- [ ] Verifikasi & Build

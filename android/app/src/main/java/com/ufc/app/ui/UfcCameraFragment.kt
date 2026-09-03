@@ -19,23 +19,27 @@ import com.ufc.app.stream.RtmpPusher
  */
 class UfcCameraFragment : CameraFragment() {
 
-    private lateinit var previewView: AspectRatioTextureView
-    private lateinit var container: FrameLayout
+    private var previewView: AspectRatioTextureView? = null
+    private var container: FrameLayout? = null
+    private var cachedData: ByteArray? = null
 
     var rtmpPusher: RtmpPusher? = null
 
     override fun getRootView(inflater: LayoutInflater, container: ViewGroup?): View {
         val root = FrameLayout(requireContext())
-        previewView = AspectRatioTextureView(requireContext())
         this.container = FrameLayout(requireContext())
-        this.container.addView(previewView)
         root.addView(this.container)
         return root
     }
 
-    override fun getCameraView(): IAspectRatio = previewView
+    override fun getCameraView(): IAspectRatio? {
+        if (previewView == null) {
+            previewView = AspectRatioTextureView(requireContext())
+        }
+        return previewView
+    }
 
-    override fun getCameraViewContainer(): ViewGroup = container
+    override fun getCameraViewContainer(): ViewGroup? = container
 
     override fun getCameraRequest(): CameraRequest {
         val config = StreamConfig(requireContext())
@@ -59,10 +63,10 @@ class UfcCameraFragment : CameraFragment() {
         return CameraRequest.Builder()
             .setPreviewWidth(width)
             .setPreviewHeight(height)
-            .setRenderMode(CameraRequest.RenderMode.OPENGL)
+            .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
             .setAudioSource(CameraRequest.AudioSource.SOURCE_AUTO)
-            .setPreviewFormat(CameraRequest.PreviewFormat.FORMAT_MJPEG)
+            .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
     }
@@ -75,14 +79,27 @@ class UfcCameraFragment : CameraFragment() {
         when (code) {
             ICameraStateCallBack.State.OPENED -> {
                 StatusRepository.update { it.copy(connected = true) }
-                captureStreamStart()
+                
+                val config = StreamConfig(requireContext())
+                if (config.monitorAudio) {
+                    // Beri sedikit jeda agar tidak crash saat inisialisasi UAC
+                    container?.postDelayed({
+                        if (isFragmentAttached()) {
+                            startPlayMic(null)
+                        }
+                    }, 500)
+                }
             }
             ICameraStateCallBack.State.CLOSED -> {
                 StatusRepository.update { it.copy(connected = false) }
                 captureStreamStop()
+                stopPlayMic()
             }
             ICameraStateCallBack.State.ERROR -> {
                 StatusRepository.update { it.copy(connected = false) }
+                if (isFragmentAttached()) {
+                    android.widget.Toast.makeText(requireContext(), "Camera Error: $msg", android.widget.Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -97,16 +114,61 @@ class UfcCameraFragment : CameraFragment() {
                 size: Int,
                 timestamp: Long
             ) {
-                // Konversi DataType enum ke Int untuk RtmpPusher
-                // Berdasarkan AusbcPusher 3.6.0: 0 untuk Audio, 1 untuk Video
                 val typeInt = when (type) {
                     IEncodeDataCallBack.DataType.AAC -> 0
-                    else -> 1 // H264, H264_KEY, H264_SPS
+                    else -> 1
                 }
-                val data = ByteArray(size)
-                buffer.get(data, offset, size)
-                rtmpPusher?.onEncodedData(typeInt, data, size, timestamp)
+                
+                // Reuse buffer untuk menghemat memori (Anti-Lag/Anti-Crash)
+                if (cachedData == null || cachedData!!.size != size) {
+                    cachedData = ByteArray(size)
+                }
+                
+                try {
+                    buffer.get(cachedData!!, offset, size)
+                    rtmpPusher?.onEncodedData(typeInt, cachedData!!, size, timestamp)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
         })
+    }
+
+    fun startEncoding() {
+        captureStreamStart()
+    }
+
+    fun stopEncoding() {
+        captureStreamStop()
+    }
+
+    fun showDeviceListDialog() {
+        val usbDevices = getDeviceList()
+        if (usbDevices.isNullOrEmpty()) {
+            android.widget.Toast.makeText(requireContext(), "No USB devices found", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val deviceNames = usbDevices.map { 
+            "${it.productName} (${it.deviceName})"
+        }.toTypedArray()
+        
+        androidx.appcompat.app.AlertDialog.Builder(requireContext())
+            .setTitle("Select Capture Card")
+            .setItems(deviceNames) { _, which ->
+                switchCamera(usbDevices[which])
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    override fun onDestroyView() {
+        // Pembersihan manual yang lebih aman untuk mencegah Native Crash
+        stopPlayMic()
+        captureStreamStop()
+        unRegisterMultiCamera()
+        previewView = null
+        container = null
+        super.onDestroyView()
     }
 }

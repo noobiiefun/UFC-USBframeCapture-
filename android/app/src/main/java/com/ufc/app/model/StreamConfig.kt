@@ -36,5 +36,17 @@ class StreamConfig(context: Context) {
         get() = prefs.getBoolean("is_portrait", false)
         set(value) = prefs.edit().putBoolean("is_portrait", value).apply()
 
+    var useMjpeg: Boolean
+        get() = prefs.getBoolean("use_mjpeg", true)
+        set(value) = prefs.edit().putBoolean("use_mjpeg", value).apply()
+
+    var monitorAudio: Boolean
+        get() = prefs.getBoolean("monitor_audio", false)
+        set(value) = prefs.edit().putBoolean("monitor_audio", value).apply()
+
+    var useOpengl: Boolean
+        get() = prefs.getBoolean("use_opengl", true)
+        set(value) = prefs.edit().putBoolean("use_opengl", value).apply()
+
     val fullUrl: String get() = "$rtmpUrl$streamKey"
 }

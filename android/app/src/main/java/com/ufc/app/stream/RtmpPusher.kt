@@ -46,30 +46,38 @@ class RtmpPusher {
                         markConnected(true)
                     } else {
                         markConnected(false)
+                        isPushing = false
                     }
                 }
             })
             AusbcPusher.start(config.rtmpUrl)
+            isPushing = true
         } catch (e: Throwable) {
             // Tangani NotImplementedError (Error) atau exception lain dari library skeleton
             e.printStackTrace()
             markConnected(false)
             isPushing = false
+            android.widget.Toast.makeText(context, "Streaming Error: ${e.localizedMessage}", android.widget.Toast.LENGTH_LONG).show()
         }
 
-        isPushing = true
-        StatusRepository.update {
-            it.copy(
-                resolution = "${config.width}x${config.height}", 
-                fps = config.fps,
-                bitrateKbps = config.videoBitrateKbps
-            )
+        if (isPushing) {
+            StatusRepository.update {
+                it.copy(
+                    resolution = "${config.width}x${config.height}", 
+                    fps = config.fps,
+                    bitrateKbps = config.videoBitrateKbps
+                )
+            }
         }
     }
 
     fun stop() {
         isPushing = false
-        AusbcPusher.stop()
+        try {
+            AusbcPusher.stop()
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
         markConnected(false)
     }
 
@@ -79,7 +87,11 @@ class RtmpPusher {
      */
     fun onEncodedData(type: Int, data: ByteArray, size: Int, pts: Long) {
         if (!isPushing) return
-        AusbcPusher.pushStream(type, data, size, pts)
+        try {
+            AusbcPusher.pushStream(type, data, size, pts)
+        } catch (e: Throwable) {
+            e.printStackTrace()
+        }
     }
 
     private fun markConnected(connected: Boolean) {

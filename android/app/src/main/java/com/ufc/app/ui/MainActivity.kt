@@ -9,6 +9,8 @@ import android.view.View
 import android.widget.Button
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.ufc.app.R
@@ -19,6 +21,9 @@ import com.ufc.app.server.StatusServer
 import com.ufc.app.stream.RtmpPusher
 import com.ufc.app.stream.StreamService
 import kotlinx.coroutines.launch
+import android.Manifest
+import android.content.pm.PackageManager
+import android.widget.Toast
 
 class MainActivity : AppCompatActivity() {
 
@@ -37,14 +42,17 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         
         config = StreamConfig(this)
-        // Kunci orientasi layar sesuai setting (mencegah auto-rotate sensor)
-        requestedOrientation = if (config.isPortrait) {
+        setContentView(R.layout.activity_main)
+
+        // Terapkan orientasi awal tanpa memicu recreate loop jika memungkinkan
+        val targetOrient = if (config.isPortrait) {
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         } else {
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
         }
-
-        setContentView(R.layout.activity_main)
+        if (requestedOrientation != targetOrient) {
+            requestedOrientation = targetOrient
+        }
 
         cameraFragment = UfcCameraFragment().apply { rtmpPusher = this@MainActivity.rtmpPusher }
         supportFragmentManager.beginTransaction()
@@ -58,6 +66,7 @@ class MainActivity : AppCompatActivity() {
         val stopStreamButton = findViewById<Button>(R.id.btnStopStream)
         val settingsButton = findViewById<Button>(R.id.btnSettings)
         val rotateButton = findViewById<Button>(R.id.btnRotate)
+        val usbButton = findViewById<Button>(R.id.btnUsb)
 
         // Drag logic for overlay
         draggableOverlay.setOnTouchListener { view, event ->
@@ -83,10 +92,15 @@ class MainActivity : AppCompatActivity() {
 
         rotateButton.setOnClickListener {
             config.isPortrait = !config.isPortrait
-            requestedOrientation = if (config.isPortrait) {
-                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            // Gunakan recreate() agar siklus kamera bersih saat ganti orientasi
+            recreate()
+        }
+
+        usbButton.setOnClickListener {
+            if (checkPermissions()) {
+                cameraFragment.showDeviceListDialog()
             } else {
-                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                requestPermissions()
             }
         }
 
@@ -126,11 +140,13 @@ class MainActivity : AppCompatActivity() {
                 )
             )
             rtmpPusher.start(this)
+            cameraFragment.startEncoding()
             startService(Intent(this, StreamService::class.java))
         }
 
         stopStreamButton.setOnClickListener {
             rtmpPusher.stop()
+            cameraFragment.stopEncoding()
             stopService(Intent(this, StreamService::class.java))
         }
 
@@ -169,7 +185,33 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, StreamService::class.java))
     }
 
+    private fun checkPermissions(): Boolean {
+        val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+        val audio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+        return camera == PackageManager.PERMISSION_GRANTED && audio == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun requestPermissions() {
+        ActivityCompat.requestPermissions(
+            this,
+            arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
+            PERM_CODE
+        )
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == PERM_CODE) {
+            if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
+                Toast.makeText(this, "Permissions Granted", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(this, "Permissions Denied! App may not work correctly.", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     companion object {
         private const val SOCKET_TIMEOUT_MS = 5000
+        private const val PERM_CODE = 101
     }
 }
