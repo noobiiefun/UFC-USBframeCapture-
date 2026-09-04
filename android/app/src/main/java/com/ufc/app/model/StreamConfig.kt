@@ -17,11 +17,11 @@ class StreamConfig(context: Context) {
         set(value) = prefs.edit().putString("stream_key", value).apply()
 
     var resolutionWidth: Int
-        get() = prefs.getInt("res_w", 1280)
+        get() = prefs.getInt("res_w", 854)
         set(value) = prefs.edit().putInt("res_w", value).apply()
 
     var resolutionHeight: Int
-        get() = prefs.getInt("res_h", 720)
+        get() = prefs.getInt("res_h", 480)
         set(value) = prefs.edit().putInt("res_h", value).apply()
 
     var fps: Int
@@ -45,7 +45,7 @@ class StreamConfig(context: Context) {
         set(value) = prefs.edit().putBoolean("monitor_audio", value).apply()
 
     var useOpengl: Boolean
-        get() = prefs.getBoolean("use_opengl", true)
+        get() = prefs.getBoolean("use_opengl", false)
         set(value) = prefs.edit().putBoolean("use_opengl", value).apply()
 
     val fullUrl: String get() = "$rtmpUrl$streamKey"

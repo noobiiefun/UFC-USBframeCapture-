@@ -47,4 +47,7 @@ dependencies {
     // HTTP server ringan untuk endpoint /status
     implementation("org.nanohttpd:nanohttpd:2.3.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
+
+    // Mesin Streaming RTMP Real (Standar Industri)
+    implementation("com.github.pedroSG94.RootEncoder:rtmp:2.8.1")
 }

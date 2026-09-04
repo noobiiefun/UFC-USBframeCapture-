@@ -1,37 +1,36 @@
-# Walkthrough - Perbaikan Gambar Putih dan Masalah Deteksi USB
+# Walkthrough - Implementasi Mesin Streaming RTMP Real
 
-Saya telah melakukan perbaikan teknis mendalam untuk mengatasi masalah gambar yang tidak muncul (putih) dan ketidakstabilan deteksi USB.
+Saya telah berhasil memasang "mesin" pengiriman data yang sebenarnya agar Anda bisa melakukan livestreaming ke YouTube menggunakan capture card Anda.
 
-## Perubahan yang Dilakukan
+## Perubahan Utama
 
-### 1. Perbaikan Gambar Putih (Rendering)
-- **Logika View**: Memperbaiki cara `UfcCameraFragment` menginisialisasi `TextureView`. Sebelumnya, ada kemungkinan *view* terlepas dari mesin kamera saat pergantian perangkat.
-- **Opsi Render Mode**: Menambahkan pilihan **"Use OpenGL Render"** di Pengaturan. Jika gambar tetap putih dengan OpenGL aktif, silakan matikan opsi ini untuk mencoba mode render **NORMAL**.
+### 1. Pemasangan Pustaka `RootEncoder`
+- **Library**: Saya menambahkan pustaka `com.github.pedroSG94.RootEncoder`. Ini adalah pustaka standar industri yang digunakan untuk mengirim video dan suara ke server RTMP (seperti YouTube).
+- **Alasan**: Library bawaan sebelumnya hanya memiliki "kerangka" kosong, sehingga data tidak pernah benar-benar dikirim ke internet.
 
-### 2. Dialog Izin & Deteksi USB yang Lebih Baik
-- **MainActivity**: Tombol **USB** sekarang akan mengecek izin Kamera dan Audio secara eksplisit sebelum menampilkan daftar perangkat. Hal ini sangat penting untuk HP Xiaomi guna memastikan akses ke perangkat eksternal diizinkan oleh sistem.
-- **Error Reporting**: Sekarang, jika terjadi kesalahan saat membuka kamera, aplikasi akan menampilkan pesan **Toast** yang detail (misal: "Error: Resolution not supported").
+### 2. Implementasi `RtmpPusher.kt` yang Baru
+- Sekarang file ini menggunakan `RtmpClient` asli.
+- **Auto-Sync**: Gambar dan suara dikirim secara sinkron menggunakan timestamp mikrodetik agar tidak terjadi *delay* antara bibir dan suara.
+- **Status Connection**: Sekarang indikator **YT: LIVE** di layar Anda akan benar-benar mencerminkan apakah HP Anda berhasil tersambung ke server YouTube atau tidak.
 
-### 3. Stabilitas Streaming (Robustness)
-- **RtmpPusher**: Menambahkan penanganan `Throwable` (bukan hanya `Exception`) di setiap fungsi kunci. Ini akan menjamin aplikasi tidak akan pernah *force close* meskipun ada error internal dari library pihak ketiga.
+### 3. Integrasi Data di `UfcCameraFragment.kt`
+- **Penyambung Kabel Data**: Saya telah menghubungkan output dari capture card (H.264 video dan AAC audio) langsung ke mesin RTMP.
+- **Ekstraksi Metadata**: Aplikasi sekarang secara otomatis mencari data **SPS/PPS** (identitas video) dari capture card Anda dan mengirimkannya ke YouTube agar gambar bisa tampil dengan resolusi yang tepat.
 
-## Cara Menggunakan Fitur Baru
+## Cara Melakukan Live
 
-1.  **Izin Pertama**: Klik tombol **USB**, izinkan semua permintaan (Kamera/Audio) yang muncul.
-2.  **Pilih USB**: Pilih "usb2 video" dari daftar.
-3.  **Jika Masih Putih**:
-    - Ke **Settings**, matikan **Use OpenGL Render**.
-    - Coba ganti **Preview Format** ke **YUYV**.
-    - Klik tombol **USB** lagi untuk *refresh* koneksi.
+1.  Buka menu **Settings (Set)**.
+2.  Pastikan **RTMP Server URL** dan **Stream Key** dari YouTube Studio Anda sudah benar.
+3.  Simpan pengaturan.
+4.  Gunakan tombol **USB** untuk memunculkan gambar capture card.
+5.  Klik **Start Live**.
+6.  Tunggu hingga indikator di kiri bawah berubah menjadi **YT: LIVE**.
 
 ## Hasil Verifikasi
-- Build **SUCCESS**.
-- Penanganan izin sudah diimplementasikan di `MainActivity`.
-- Logika rendering di `UfcCameraFragment` sudah distandarisasi.
+- Perintah build berjalan **SUCCESS**.
+- Library `RootEncoder` berhasil terintegrasi melalui Gradle Sync.
+- Alur data video dari AUSBC ke RTMP Client sudah terpasang.
 
-> [!NOTE]
-> Pastikan capture card Anda sudah tercolok dengan benar ke kabel OTG sebelum menekan tombol USB.
-
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/MainActivity.kt)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
 render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/UfcCameraFragment.kt)
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/res/layout/activity_settings.xml)

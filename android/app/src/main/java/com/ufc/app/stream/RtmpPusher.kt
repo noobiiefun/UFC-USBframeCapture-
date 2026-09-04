@@ -1,17 +1,16 @@
 package com.ufc.app.stream
 
 import android.content.Context
-import com.jiangdg.ausbc.pusher.AusbcPusher
-import com.jiangdg.ausbc.pusher.IPusher
-import com.jiangdg.ausbc.pusher.callback.IStateCallback
-import com.jiangdg.ausbc.pusher.config.AusbcConfig
+import android.media.MediaCodec
+import com.pedro.rtmp.rtmp.RtmpClient
+import com.pedro.common.ConnectChecker
 import com.ufc.app.StatusRepository
 import java.nio.ByteBuffer
 
 /**
- * Membungkus komponen push RTMP dari library AndroidUSBCamera (modul :libpush).
+ * Membungkus komponen push RTMP menggunakan library RootEncoder (pedroSG94).
  */
-class RtmpPusher {
+class RtmpPusher : ConnectChecker {
 
     data class Config(
         val width: Int = 1280,
@@ -19,11 +18,14 @@ class RtmpPusher {
         val fps: Int = 30,
         val videoBitrateKbps: Int = 2500,
         val audioBitrateKbps: Int = 128,
-        val rtmpUrl: String = "" 
+        val rtmpUrl: String = ""
     )
 
     private var config: Config = Config()
     private var isPushing = false
+    private var rtmpClient: RtmpClient = RtmpClient(this)
+    private val videoInfo = MediaCodec.BufferInfo()
+    private val audioInfo = MediaCodec.BufferInfo()
 
     fun configure(config: Config) {
         this.config = config
@@ -33,27 +35,12 @@ class RtmpPusher {
         if (isPushing) return
         require(config.rtmpUrl.isNotBlank()) { "RTMP URL belum diisi" }
 
-        val ausbcConfig = AusbcConfig().apply {
-            setVideoWidth(config.width)
-            setVideoHeight(config.height)
-        }
-
         try {
-            AusbcPusher.init(context, ausbcConfig, object : IStateCallback {
-                override fun onPushState(code: Int, msg: String?) {
-                    // Biasanya code > 0 menandakan sukses/aktif
-                    if (code > 0) {
-                        markConnected(true)
-                    } else {
-                        markConnected(false)
-                        isPushing = false
-                    }
-                }
-            })
-            AusbcPusher.start(config.rtmpUrl)
+            // Inisialisasi info dasar (akan diupdate saat SPS/PPS datang)
+            rtmpClient.setAudioInfo(44100, true)
+            rtmpClient.connect(config.rtmpUrl)
             isPushing = true
         } catch (e: Throwable) {
-            // Tangani NotImplementedError (Error) atau exception lain dari library skeleton
             e.printStackTrace()
             markConnected(false)
             isPushing = false
@@ -63,7 +50,7 @@ class RtmpPusher {
         if (isPushing) {
             StatusRepository.update {
                 it.copy(
-                    resolution = "${config.width}x${config.height}", 
+                    resolution = "${config.width}x${config.height}",
                     fps = config.fps,
                     bitrateKbps = config.videoBitrateKbps
                 )
@@ -74,7 +61,7 @@ class RtmpPusher {
     fun stop() {
         isPushing = false
         try {
-            AusbcPusher.stop()
+            rtmpClient.disconnect()
         } catch (e: Throwable) {
             e.printStackTrace()
         }
@@ -83,15 +70,27 @@ class RtmpPusher {
 
     /**
      * Dipanggil UfcCameraFragment setiap ada frame H.264/AAC baru.
-     * type: 0 untuk audio, 1 untuk video (berdasarkan AusbcPusher 3.6.0)
+     * Menggunakan ByteBuffer langsung dari library AUSBC untuk efisiensi.
      */
-    fun onEncodedData(type: Int, data: ByteArray, size: Int, pts: Long) {
-        if (!isPushing) return
-        try {
-            AusbcPusher.pushStream(type, data, size, pts)
-        } catch (e: Throwable) {
-            e.printStackTrace()
-        }
+    fun onVideoData(buffer: ByteBuffer, offset: Int, size: Int, timestampUs: Long, isKeyFrame: Boolean) {
+        if (!isPushing || !rtmpClient.isStreaming) return
+
+        videoInfo.set(offset, size, timestampUs, if (isKeyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
+        rtmpClient.sendVideo(buffer, videoInfo)
+    }
+
+    fun onAudioData(buffer: ByteBuffer, offset: Int, size: Int, timestampUs: Long) {
+        if (!isPushing || !rtmpClient.isStreaming) return
+
+        audioInfo.set(offset, size, timestampUs, 0)
+        rtmpClient.sendAudio(buffer, audioInfo)
+    }
+
+    /**
+     * Set metadata video (SPS/PPS) yang didapat dari encoder.
+     */
+    fun setVideoMetadata(sps: ByteBuffer, pps: ByteBuffer) {
+        rtmpClient.setVideoInfo(sps, pps, null)
     }
 
     private fun markConnected(connected: Boolean) {
@@ -101,5 +100,35 @@ class RtmpPusher {
                 uptimeSec = if (connected) StatusRepository.currentUptimeSec() else it.uptimeSec
             )
         }
+    }
+
+    // --- ConnectChecker Implementation ---
+
+    override fun onConnectionSuccess() {
+        markConnected(true)
+    }
+
+    override fun onConnectionFailed(reason: String) {
+        isPushing = false
+        markConnected(false)
+    }
+
+    override fun onConnectionStarted(url: String) {
+    }
+
+    override fun onNewBitrate(bitrate: Long) {
+    }
+
+    override fun onDisconnect() {
+        isPushing = false
+        markConnected(false)
+    }
+
+    override fun onAuthError() {
+        isPushing = false
+        markConnected(false)
+    }
+
+    override fun onAuthSuccess() {
     }
 }

@@ -1,41 +1,40 @@
-# Rencana Perbaikan: Native Crash dan Stabilitas Lifecycle
+# Rencana Implementasi: Perbaikan Fitur Livestreaming (RTMP)
 
-Rencana ini bertujuan untuk menghentikan Native Crash (`SIGABRT` pada mutex) yang menyebabkan aplikasi menutup sendiri dan memastikan siklus hidup kamera berjalan aman saat pergantian orientasi.
+Tugas ini bertujuan untuk mengganti mesin streaming "kosong" dari library bawaan dengan mesin streaming RTMP yang benar-benar berfungsi agar Anda bisa melakukan live ke YouTube.
 
-## Analisis Masalah
+## User Review Required
 
-1.  **Native Crash (Destroyed Mutex)**: Logcat menunjukkan `pthread_mutex_lock called on a destroyed mutex` di dalam `libuvc.so`. Ini terjadi karena library mencoba mengakses perangkat USB saat proses pembersihan (*cleanup*) sedang berjalan atau sudah selesai namun thread-nya masih aktif.
-2.  **Recreation Loop**: Setting `requestedOrientation` di dalam `onCreate` memicu aktivitas dibuat ulang jika orientasi saat ini berbeda. Hal ini menyebabkan inisialisasi kamera terjadi dua kali berturut-turut dalam waktu singkat, yang memicu konflik di level Native.
-3.  **Async Cleanup**: Panggilan `closeCamera()` di library bersifat asinkronus. Jika kita langsung memanggil `destroy()` setelahnya, sumber daya Native mungkin dihapus sebelum thread kamera benar-benar berhenti.
+> [!IMPORTANT]
+> **Pustaka Baru**: Saya akan menambahkan pustaka `RootEncoder` (oleh pedroSG94) yang merupakan standar industri untuk streaming RTMP di Android. Ini diperlukan karena library `AndroidUSBCamera` versi terbaru tidak menyertakan implementasi pengiriman data ke server.
 
 ## Perubahan yang Diusulkan
 
-### 1. Perbaikan Inisialisasi View (`UfcCameraFragment.kt`)
-- Memastikan `previewView` hanya dibuat satu kali dan disimpan dengan benar.
-- Menghindari pembuatan objek view baru di dalam getter `getCameraView()` yang bisa dipanggil berkali-kali oleh library.
+### 1. Penambahan Dependency
+- Menambahkan `com.github.pedroSG94.RootEncoder:rtmp:2.8.1` ke `app/build.gradle.kts`. Pustaka ini sangat stabil dan mendukung pengiriman data mentah H.264/AAC.
 
-### 2. Penanganan Orientasi yang Aman (`MainActivity.kt`)
-- Menghapus paksaan orientasi di `onCreate`. Sebagai gantinya, biarkan sistem menangani orientasi atau gunakan tombol Rotate tanpa memicu `recreate()` yang agresif jika tidak perlu.
-- Mengunci orientasi di `AndroidManifest.xml` agar lebih stabil secara default.
+### 2. Implementasi RTMP Real (`RtmpPusher.kt`)
+- Menghapus ketergantungan pada `AusbcPusher` yang kosong.
+- Menggunakan `RtmpClient` dari library `RootEncoder`.
+- Menambahkan logika penanganan koneksi (reconnect otomatis jika sinyal drop).
+- Memastikan data audio dan video dikirim secara sinkron agar tidak ada jeda antara suara dan gambar.
 
-### 3. Sinkronisasi Cleanup (`UfcCameraFragment.kt`)
-- Menambahkan logika pembersihan yang lebih hati-hati di `onDestroy`.
-- Memberikan jeda sangat singkat atau memastikan `unRegisterMultiCamera` dipanggil di waktu yang tepat.
-- Menonaktifkan **Audio Monitor** secara default untuk mengurangi risiko konflik hardware USB.
+### 3. Integrasi Data Encode (`UfcCameraFragment.kt`)
+- Menghubungkan output dari *encoder* capture card (H.264 dan AAC) langsung ke mesin RTMP baru.
+- Menangani data **SPS/PPS** (metadata video) secara otomatis agar YouTube bisa mengenali resolusi dan format video Anda.
 
-### 4. Downgrade Compile SDK (Opsional tapi Disarankan)
-- Menurunkan `compileSdk` dan `targetSdk` ke **34 (Android 14)** untuk meningkatkan stabilitas dengan library NDK yang sudah agak lama, karena SDK 36 memiliki pengecekan keamanan (*Fortify*) yang sangat ketat yang sering memicu `SIGABRT` pada kode Native lama.
+### 4. Peningkatan Informasi Status (`MainActivity.kt`)
+- Memperbarui indikator **YT: LIVE** atau **YT: OFF** agar benar-benar mencerminkan status koneksi ke server YouTube.
 
 ## Rincian File yang Diubah
 
+#### [MODIFY] [app/build.gradle.kts](file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
+#### [MODIFY] [RtmpPusher.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
 #### [MODIFY] [UfcCameraFragment.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/UfcCameraFragment.kt)
-#### [MODIFY] [MainActivity.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/MainActivity.kt)
-#### [MODIFY] [build.gradle.kts](file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
-#### [MODIFY] [AndroidManifest.xml](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/AndroidManifest.xml)
 
 ## Rencana Verifikasi
 
-1.  Buka aplikasi, biarkan preview berjalan.
-2.  Ganti-ganti orientasi dengan tombol Rotate. Pastikan tidak terjadi crash.
-3.  Cabut dan colok kembali capture card saat aplikasi menyala.
-4.  Cek logcat untuk memastikan tidak ada pesan `destroyed mutex` lagi.
+### Manual
+1.  Buka aplikasi, masukkan RTMP URL dan Stream Key YouTube Anda.
+2.  Klik **Start Live**.
+3.  Pastikan indikator berubah menjadi **YT: LIVE**.
+4.  Buka Dashboard YouTube Studio Anda, pastikan stream sudah masuk dan gambar terlihat lancar.

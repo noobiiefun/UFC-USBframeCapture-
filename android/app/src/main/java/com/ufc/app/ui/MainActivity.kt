@@ -20,6 +20,7 @@ import com.ufc.app.server.DiscoveryBroadcaster
 import com.ufc.app.server.StatusServer
 import com.ufc.app.stream.RtmpPusher
 import com.ufc.app.stream.StreamService
+import android.view.WindowManager
 import kotlinx.coroutines.launch
 import android.Manifest
 import android.content.pm.PackageManager
@@ -41,6 +42,9 @@ class MainActivity : AppCompatActivity() {
         installSplashScreen()
         super.onCreate(savedInstanceState)
         
+        // Jaga layar tetap menyala
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+
         config = StreamConfig(this)
         setContentView(R.layout.activity_main)
 
@@ -92,8 +96,11 @@ class MainActivity : AppCompatActivity() {
 
         rotateButton.setOnClickListener {
             config.isPortrait = !config.isPortrait
-            // Gunakan recreate() agar siklus kamera bersih saat ganti orientasi
-            recreate()
+            requestedOrientation = if (config.isPortrait) {
+                ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            } else {
+                ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            }
         }
 
         usbButton.setOnClickListener {

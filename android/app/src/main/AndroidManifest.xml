@@ -25,7 +25,7 @@
             android:name=".stream.StreamService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="mediaProjection|camera" />
+            android:foregroundServiceType="camera|microphone|connectedDevice" />
 
         <activity
             android:name=".ui.SettingsActivity"

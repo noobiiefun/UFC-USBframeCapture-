@@ -1,6 +1,5 @@
-- [ ] Perbaikan Stabilitas & SDK
-    - [ ] Downgrade SDK ke API 34 di `app/build.gradle.kts`
-    - [ ] Fix `UfcCameraFragment.kt` (View reuse & safe cleanup)
-    - [ ] Fix `MainActivity.kt` (Safe orientation logic)
-    - [ ] Lock orientation di `AndroidManifest.xml`
+- [ ] Integrasi Mesin RTMP Real (`RootEncoder`)
+    - [ ] Tambah dependency `com.github.pedroSG94.RootEncoder:rtmp:2.8.1`
+    - [ ] Implementasi `RtmpPusher.kt` dengan `RtmpClient`
+    - [ ] Update `UfcCameraFragment.kt` (integrasi data encode)
 - [ ] Verifikasi & Build

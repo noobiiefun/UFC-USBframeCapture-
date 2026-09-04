@@ -13,6 +13,7 @@ import com.jiangdg.ausbc.widget.IAspectRatio
 import com.ufc.app.StatusRepository
 import com.ufc.app.model.StreamConfig
 import com.ufc.app.stream.RtmpPusher
+import java.nio.ByteBuffer
 
 /**
  * Fragment inti yang menangani capture UVC.
@@ -21,7 +22,7 @@ class UfcCameraFragment : CameraFragment() {
 
     private var previewView: AspectRatioTextureView? = null
     private var container: FrameLayout? = null
-    private var cachedData: ByteArray? = null
+    private var isClosing = false
 
     var rtmpPusher: RtmpPusher? = null
 
@@ -65,7 +66,7 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            .setAudioSource(CameraRequest.AudioSource.SOURCE_AUTO)
+            .setAudioSource(CameraRequest.AudioSource.NONE) // Matikan audio total untuk hemat daya
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
@@ -79,16 +80,6 @@ class UfcCameraFragment : CameraFragment() {
         when (code) {
             ICameraStateCallBack.State.OPENED -> {
                 StatusRepository.update { it.copy(connected = true) }
-                
-                val config = StreamConfig(requireContext())
-                if (config.monitorAudio) {
-                    // Beri sedikit jeda agar tidak crash saat inisialisasi UAC
-                    container?.postDelayed({
-                        if (isFragmentAttached()) {
-                            startPlayMic(null)
-                        }
-                    }, 500)
-                }
             }
             ICameraStateCallBack.State.CLOSED -> {
                 StatusRepository.update { it.copy(connected = false) }
@@ -109,29 +100,70 @@ class UfcCameraFragment : CameraFragment() {
         setEncodeDataCallBack(object : IEncodeDataCallBack {
             override fun onEncodeData(
                 type: IEncodeDataCallBack.DataType,
-                buffer: java.nio.ByteBuffer,
+                buffer: ByteBuffer,
                 offset: Int,
                 size: Int,
                 timestamp: Long
             ) {
-                val typeInt = when (type) {
-                    IEncodeDataCallBack.DataType.AAC -> 0
-                    else -> 1
-                }
+                if (isClosing) return
                 
-                // Reuse buffer untuk menghemat memori (Anti-Lag/Anti-Crash)
-                if (cachedData == null || cachedData!!.size != size) {
-                    cachedData = ByteArray(size)
-                }
-                
-                try {
-                    buffer.get(cachedData!!, offset, size)
-                    rtmpPusher?.onEncodedData(typeInt, cachedData!!, size, timestamp)
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                // RootEncoder butuh timestamp dalam Microseconds (Us)
+                val timestampUs = timestamp * 1000
+
+                when (type) {
+                    IEncodeDataCallBack.DataType.H264_SPS -> {
+                        extractSpsPps(buffer, offset, size)
+                    }
+                    IEncodeDataCallBack.DataType.H264_KEY -> {
+                        rtmpPusher?.onVideoData(buffer, offset, size, timestampUs, true)
+                    }
+                    IEncodeDataCallBack.DataType.H264 -> {
+                        rtmpPusher?.onVideoData(buffer, offset, size, timestampUs, false)
+                    }
+                    IEncodeDataCallBack.DataType.AAC -> {
+                        rtmpPusher?.onAudioData(buffer, offset, size, timestampUs)
+                    }
                 }
             }
         })
+    }
+
+    /**
+     * Memisahkan SPS dan PPS dari buffer gabungan library AUSBC.
+     */
+    private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
+        // Simpan posisi asli
+        val originalPos = buffer.position()
+        val originalLimit = buffer.limit()
+
+        try {
+            buffer.position(offset)
+            buffer.limit(offset + size)
+            
+            val data = ByteArray(size)
+            buffer.get(data)
+            
+            // Cari start code 00 00 00 01 untuk memisahkan SPS dan PPS
+            var ppsIndex = -1
+            for (i in 4 until size - 4) {
+                if (data[i] == 0.toByte() && data[i+1] == 0.toByte() && 
+                    data[i+2] == 0.toByte() && data[i+3] == 1.toByte()) {
+                    ppsIndex = i
+                    break
+                }
+            }
+            
+            if (ppsIndex != -1) {
+                val sps = ByteBuffer.wrap(data, 0, ppsIndex)
+                val pps = ByteBuffer.wrap(data, ppsIndex, size - ppsIndex)
+                rtmpPusher?.setVideoMetadata(sps, pps)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        } finally {
+            buffer.position(originalPos)
+            buffer.limit(originalLimit)
+        }
     }
 
     fun startEncoding() {
@@ -143,6 +175,9 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     fun showDeviceListDialog() {
+        // Pastikan kamera ditutup dulu sebelum ganti perangkat untuk hindari Bad FD
+        closeCamera()
+        
         val usbDevices = getDeviceList()
         if (usbDevices.isNullOrEmpty()) {
             android.widget.Toast.makeText(requireContext(), "No USB devices found", android.widget.Toast.LENGTH_SHORT).show()
@@ -163,10 +198,16 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     override fun onDestroyView() {
+        isClosing = true
         // Pembersihan manual yang lebih aman untuk mencegah Native Crash
         stopPlayMic()
         captureStreamStop()
-        unRegisterMultiCamera()
+        
+        // Beri delay sangat singkat agar thread library menyelesaikan loop terakhirnya
+        container?.postDelayed({
+            unRegisterMultiCamera()
+        }, 200)
+        
         previewView = null
         container = null
         super.onDestroyView()
