@@ -68,7 +68,7 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            .setAudioSource(CameraRequest.AudioSource.NONE) // Gunakan NONE di sini karena kita ambil suara via RootEncoder/Mic HP
+            .setAudioSource(CameraRequest.AudioSource.NONE) // MATIKAN Audio USB (UAC) total untuk hindari ioctl error
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
@@ -110,27 +110,33 @@ class UfcCameraFragment : CameraFragment() {
             ) {
                 if (isClosing) return
                 
-                // RootEncoder butuh timestamp dalam Microseconds (Us)
-                val timestampUs = timestamp * 1000
-
-                // Salin data ke buffer mandiri agar tidak kena Bad FD (Deep Copy)
+                // Deep Copy data ke buffer mandiri agar tidak kena Bad FD (ioctl error)
+                // Ini mencegah sistem kamera mengambil kembali memori sebelum data terkirim
                 if (videoBufferCopy == null || videoBufferCopy!!.capacity() < size) {
                     videoBufferCopy = ByteBuffer.allocateDirect(size * 2)
                 }
                 
                 try {
                     videoBufferCopy!!.clear()
+                    val originalPos = buffer.position()
                     val originalLimit = buffer.limit()
+                    
                     buffer.position(offset)
                     buffer.limit(offset + size)
                     videoBufferCopy!!.put(buffer)
                     videoBufferCopy!!.flip()
-                    buffer.limit(originalLimit) // Kembalikan limit asli
+                    
+                    // Kembalikan posisi asli buffer library
+                    buffer.position(originalPos)
+                    buffer.limit(originalLimit)
+
+                    // RootEncoder butuh timestamp dalam Microseconds (Us)
+                    val timestampUs = timestamp * 1000
 
                     when (type) {
                         IEncodeDataCallBack.DataType.H264_SPS -> {
                             Log.v("UfcCamera", "H264_SPS received")
-                            extractSpsPps(videoBufferCopy!!, 0, size)
+                            extractSpsPps(videoBufferCopy!!, size)
                         }
                         IEncodeDataCallBack.DataType.H264_KEY -> {
                             rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, true)
@@ -139,11 +145,11 @@ class UfcCameraFragment : CameraFragment() {
                             rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, false)
                         }
                         IEncodeDataCallBack.DataType.AAC -> {
-                            // Audio via USB dimatikan, abaikan callback ini
+                            // Abaikan audio dari USB, kita pakai Mic HP via RtmpPusher
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("UfcCamera", "Error processing encoded data: ${e.message}")
+                    Log.e("UfcCamera", "Gagal salin buffer video: ${e.message}")
                 }
             }
         })
@@ -151,22 +157,16 @@ class UfcCameraFragment : CameraFragment() {
 
     override fun initData() {
         super.initData()
-        // Pindah ke setupEncodingCallbacks() yang dipanggil saat camera OPENED
     }
 
     /**
-     * Memisahkan SPS dan PPS dari buffer gabungan library AUSBC.
+     * Memisahkan SPS dan PPS dari buffer yang sudah disalin.
      */
-    private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
-        val originalPos = buffer.position()
-        val originalLimit = buffer.limit()
-
+    private fun extractSpsPps(buffer: ByteBuffer, size: Int) {
         try {
-            buffer.position(offset)
-            buffer.limit(offset + size)
-            
             val data = ByteArray(size)
             buffer.get(data)
+            buffer.flip() // Kembalikan ke posisi 0 setelah dibaca
             
             // Cari start code 00 00 00 01 untuk memisahkan SPS dan PPS
             var ppsIndex = -1
@@ -185,9 +185,6 @@ class UfcCameraFragment : CameraFragment() {
             }
         } catch (e: Exception) {
             e.printStackTrace()
-        } finally {
-            buffer.position(originalPos)
-            buffer.limit(originalLimit)
         }
     }
 
@@ -202,9 +199,7 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     fun showDeviceListDialog() {
-        // Pastikan kamera ditutup dulu sebelum ganti perangkat untuk hindari Bad FD
         closeCamera()
-        
         val usbDevices = getDeviceList()
         if (usbDevices.isNullOrEmpty()) {
             android.widget.Toast.makeText(requireContext(), "No USB devices found", android.widget.Toast.LENGTH_SHORT).show()
@@ -226,11 +221,8 @@ class UfcCameraFragment : CameraFragment() {
 
     override fun onDestroyView() {
         isClosing = true
-        // Pembersihan manual yang lebih aman untuk mencegah Native Crash
         stopPlayMic()
         captureStreamStop()
-        
-        // Beri delay sangat singkat agar thread library menyelesaikan loop terakhirnya
         container?.postDelayed({
             unRegisterMultiCamera()
         }, 200)
