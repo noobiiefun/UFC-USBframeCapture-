@@ -41,7 +41,6 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     // Pustaka AndroidUSBCamera (AUSBC) - Fork ernestp stabil untuk Android 16+
-    // Modul libausbc mencakup UVC capture, encoding, dan pusher (RTMP)
     implementation("com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0")
 
     // HTTP server ringan untuk endpoint /status
@@ -49,5 +48,5 @@ dependencies {
     implementation("androidx.core:core-splashscreen:1.0.1")
 
     // Mesin Streaming RTMP Real (Standar Industri)
-    implementation("com.github.pedroSG94.RootEncoder:rtmp:2.8.1")
+    implementation("com.github.pedroSG94.RootEncoder:library:2.8.1")
 }

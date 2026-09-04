@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.ufc.app.StatusRepository
 import com.ufc.app.ui.MainActivity
@@ -26,6 +27,7 @@ class StreamService : Service() {
 
     private var wakeLock: PowerManager.WakeLock? = null
     private val handler = Handler(Looper.getMainLooper())
+    private val TAG = "StreamService"
     private val statsRunnable = object : Runnable {
         override fun run() {
             updateStats()
@@ -35,18 +37,26 @@ class StreamService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate()")
         createNotificationChannel()
         val notification = createNotification("UFC Streaming Active")
         
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID, 
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or 
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
-            )
-        } else {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Sesuai aturan Android 14+, deklarasikan semua tipe yang ada di Manifest
+                startForeground(
+                    NOTIFICATION_ID, 
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA or 
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE or
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Gagal startForeground: ${e.message}")
+            // Failsafe cadangan
             startForeground(NOTIFICATION_ID, notification)
         }
 

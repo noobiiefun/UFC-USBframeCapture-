@@ -1,5 +1,4 @@
-- [ ] Integrasi Mesin RTMP Real (`RootEncoder`)
-    - [ ] Tambah dependency `com.github.pedroSG94.RootEncoder:rtmp:2.8.1`
-    - [ ] Implementasi `RtmpPusher.kt` dengan `RtmpClient`
-    - [ ] Update `UfcCameraFragment.kt` (integrasi data encode)
-- [ ] Verifikasi & Build
+- [x] Perbaikan Feedback Live Streaming
+    - [x] Deteksi izin mendetail di `MainActivity.kt`
+    - [x] Failsafe service di `StreamService.kt`
+- [x] Verifikasi & Build (SUCCESS)

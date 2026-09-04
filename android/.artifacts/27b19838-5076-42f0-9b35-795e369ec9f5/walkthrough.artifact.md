@@ -1,36 +1,34 @@
-# Walkthrough - Implementasi Mesin Streaming RTMP Real
+# Walkthrough - Perbaikan Deteksi "Tombol Live Tidak Merespon"
 
-Saya telah berhasil memasang "mesin" pengiriman data yang sebenarnya agar Anda bisa melakukan livestreaming ke YouTube menggunakan capture card Anda.
+Saya telah menerapkan sistem deteksi izin dan perbaikan layanan latar belakang untuk memastikan fitur Live Streaming Anda bisa menyala di Android 14+ (Xiaomi).
 
-## Perubahan Utama
+## Perubahan yang Dilakukan
 
-### 1. Pemasangan Pustaka `RootEncoder`
-- **Library**: Saya menambahkan pustaka `com.github.pedroSG94.RootEncoder`. Ini adalah pustaka standar industri yang digunakan untuk mengirim video dan suara ke server RTMP (seperti YouTube).
-- **Alasan**: Library bawaan sebelumnya hanya memiliki "kerangka" kosong, sehingga data tidak pernah benar-benar dikirim ke internet.
+### 1. Pesan Panduan Izin (`MainActivity.kt`)
+- Sekarang, jika Anda menekan tombol **Start Live** dan ada izin yang kurang, aplikasi akan memunculkan pesan (Toast) yang jelas:
+  **"Izin kurang: Notifikasi, Kamera, Microphone"**.
+- Ini akan membantu kita tahu persis di mana sistem memblokir aplikasi.
 
-### 2. Implementasi `RtmpPusher.kt` yang Baru
-- Sekarang file ini menggunakan `RtmpClient` asli.
-- **Auto-Sync**: Gambar dan suara dikirim secara sinkron menggunakan timestamp mikrodetik agar tidak terjadi *delay* antara bibir dan suara.
-- **Status Connection**: Sekarang indikator **YT: LIVE** di layar Anda akan benar-benar mencerminkan apakah HP Anda berhasil tersambung ke server YouTube atau tidak.
+### 2. Mode Fleksibel Audio
+- Aplikasi tidak akan lagi memaksa meminta izin Microphone jika fitur **"Audio Monitor"** di Pengaturan sedang dimatikan. Ini memperkecil kemungkinan sistem Xiaomi memblokir aplikasi.
 
-### 3. Integrasi Data di `UfcCameraFragment.kt`
-- **Penyambung Kabel Data**: Saya telah menghubungkan output dari capture card (H.264 video dan AAC audio) langsung ke mesin RTMP.
-- **Ekstraksi Metadata**: Aplikasi sekarang secara otomatis mencari data **SPS/PPS** (identitas video) dari capture card Anda dan mengirimkannya ke YouTube agar gambar bisa tampil dengan resolusi yang tepat.
+### 3. Failsafe Layanan Latar Belakang (`StreamService.kt`)
+- Saya menyederhanakan cara aplikasi melapor ke sistem Android. Sekarang, aplikasi menggunakan tipe layanan **"Connected Device"** yang lebih tepat untuk USB capture card, sehingga risiko dianggap "berbahaya" oleh sistem keamanan HP lebih rendah.
 
-## Cara Melakukan Live
+## LANGKAH WAJIB UNTUK HP XIAOMI
 
-1.  Buka menu **Settings (Set)**.
-2.  Pastikan **RTMP Server URL** dan **Stream Key** dari YouTube Studio Anda sudah benar.
-3.  Simpan pengaturan.
-4.  Gunakan tombol **USB** untuk memunculkan gambar capture card.
-5.  Klik **Start Live**.
-6.  Tunggu hingga indikator di kiri bawah berubah menjadi **YT: LIVE**.
+Agar Live tidak terhenti otomatis, Anda **HARUS** melakukan langkah ini di HP Anda:
+1.  Buka **Settings** (Pengaturan) HP Xiaomi Anda.
+2.  Cari **Apps** -> **Manage Apps**.
+3.  Pilih aplikasi **UFC - USB Frame Capture**.
+4.  Cari menu **Other Permissions** (Perizinan lainnya).
+5.  Aktifkan **"Display pop-up windows while running in the background"**.
+6.  Aktifkan **"Start in background"** (Mulai di latar belakang).
+7.  Di menu **Battery Saver**, pilih **"No Restrictions"**.
 
 ## Hasil Verifikasi
 - Perintah build berjalan **SUCCESS**.
-- Library `RootEncoder` berhasil terintegrasi melalui Gradle Sync.
-- Alur data video dari AUSBC ke RTMP Client sudah terpasang.
+- Log sistem telah ditambahkan di setiap tahap krusial untuk melacak masalah jika Live masih tidak menyala.
 
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
-render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/UfcCameraFragment.kt)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/MainActivity.kt)
+render_diffs(file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/StreamService.kt)

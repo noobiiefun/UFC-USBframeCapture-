@@ -20,6 +20,9 @@ import com.ufc.app.server.DiscoveryBroadcaster
 import com.ufc.app.server.StatusServer
 import com.ufc.app.stream.RtmpPusher
 import com.ufc.app.stream.StreamService
+import android.os.Build
+import android.os.Looper
+import android.util.Log
 import android.view.WindowManager
 import kotlinx.coroutines.launch
 import android.Manifest
@@ -44,6 +47,16 @@ class MainActivity : AppCompatActivity() {
         
         // Jaga layar tetap menyala
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        
+        // Crash Handler Pintar
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            Log.e("UfcCrash", "Fatal crash in thread ${thread.name}: ${throwable.message}")
+            throwable.printStackTrace()
+            // Tunjukkan Toast lewat handler UI jika memungkinkan
+            android.os.Handler(Looper.getMainLooper()).post {
+                Toast.makeText(this, "Crash Fatal: ${throwable.localizedMessage}", Toast.LENGTH_LONG).show()
+            }
+        }
 
         config = StreamConfig(this)
         setContentView(R.layout.activity_main)
@@ -112,6 +125,13 @@ class MainActivity : AppCompatActivity() {
         }
 
         startStreamButton.setOnClickListener {
+            val status = checkPermissionsDetail()
+            if (!status.allGranted) {
+                Toast.makeText(this, "Izin kurang: ${status.missing}", Toast.LENGTH_LONG).show()
+                requestPermissions()
+                return@setOnClickListener
+            }
+
             val streamUrl = config.fullUrl
             if (streamUrl.length < 10) {
                 // Toast atau arahkan ke setting
@@ -149,6 +169,7 @@ class MainActivity : AppCompatActivity() {
             rtmpPusher.start(this)
             cameraFragment.startEncoding()
             startService(Intent(this, StreamService::class.java))
+            Toast.makeText(this, "Menghubungkan ke YouTube...", Toast.LENGTH_SHORT).show()
         }
 
         stopStreamButton.setOnClickListener {
@@ -192,16 +213,43 @@ class MainActivity : AppCompatActivity() {
         stopService(Intent(this, StreamService::class.java))
     }
 
-    private fun checkPermissions(): Boolean {
-        val camera = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
-        val audio = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-        return camera == PackageManager.PERMISSION_GRANTED && audio == PackageManager.PERMISSION_GRANTED
+    data class PermissionStatus(val allGranted: Boolean, val missing: String)
+
+    private fun checkPermissionsDetail(): PermissionStatus {
+        val missing = mutableListOf<String>()
+        
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            missing.add("Kamera")
+        }
+        
+        // Hanya minta Mic jika audio dinyalakan
+        if (config.monitorAudio && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            missing.add("Microphone")
+        }
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                missing.add("Notifikasi")
+            }
+        }
+        
+        return PermissionStatus(missing.isEmpty(), missing.joinToString(", "))
     }
 
+    private fun checkPermissions(): Boolean = checkPermissionsDetail().allGranted
+
     private fun requestPermissions() {
+        val permissions = mutableListOf(
+            Manifest.permission.CAMERA,
+            Manifest.permission.RECORD_AUDIO
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        
         ActivityCompat.requestPermissions(
             this,
-            arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
+            permissions.toTypedArray(),
             PERM_CODE
         )
     }

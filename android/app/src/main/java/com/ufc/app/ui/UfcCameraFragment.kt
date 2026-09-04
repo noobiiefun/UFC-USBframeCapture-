@@ -1,5 +1,6 @@
 package com.ufc.app.ui
 
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -22,6 +23,7 @@ class UfcCameraFragment : CameraFragment() {
 
     private var previewView: AspectRatioTextureView? = null
     private var container: FrameLayout? = null
+    private var videoBufferCopy: ByteBuffer? = null
     private var isClosing = false
 
     var rtmpPusher: RtmpPusher? = null
@@ -66,7 +68,7 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            .setAudioSource(CameraRequest.AudioSource.NONE) // Matikan audio total untuk hemat daya
+            .setAudioSource(CameraRequest.AudioSource.NONE) // Gunakan NONE di sini karena kita ambil suara via RootEncoder/Mic HP
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
@@ -79,7 +81,9 @@ class UfcCameraFragment : CameraFragment() {
     ) {
         when (code) {
             ICameraStateCallBack.State.OPENED -> {
+                Log.i("UfcCamera", "Camera Opened - Setting up encoding callbacks")
                 StatusRepository.update { it.copy(connected = true) }
+                setupEncodingCallbacks()
             }
             ICameraStateCallBack.State.CLOSED -> {
                 StatusRepository.update { it.copy(connected = false) }
@@ -95,8 +99,7 @@ class UfcCameraFragment : CameraFragment() {
         }
     }
 
-    override fun initData() {
-        super.initData()
+    private fun setupEncodingCallbacks() {
         setEncodeDataCallBack(object : IEncodeDataCallBack {
             override fun onEncodeData(
                 type: IEncodeDataCallBack.DataType,
@@ -110,29 +113,51 @@ class UfcCameraFragment : CameraFragment() {
                 // RootEncoder butuh timestamp dalam Microseconds (Us)
                 val timestampUs = timestamp * 1000
 
-                when (type) {
-                    IEncodeDataCallBack.DataType.H264_SPS -> {
-                        extractSpsPps(buffer, offset, size)
+                // Salin data ke buffer mandiri agar tidak kena Bad FD (Deep Copy)
+                if (videoBufferCopy == null || videoBufferCopy!!.capacity() < size) {
+                    videoBufferCopy = ByteBuffer.allocateDirect(size * 2)
+                }
+                
+                try {
+                    videoBufferCopy!!.clear()
+                    val originalLimit = buffer.limit()
+                    buffer.position(offset)
+                    buffer.limit(offset + size)
+                    videoBufferCopy!!.put(buffer)
+                    videoBufferCopy!!.flip()
+                    buffer.limit(originalLimit) // Kembalikan limit asli
+
+                    when (type) {
+                        IEncodeDataCallBack.DataType.H264_SPS -> {
+                            Log.v("UfcCamera", "H264_SPS received")
+                            extractSpsPps(videoBufferCopy!!, 0, size)
+                        }
+                        IEncodeDataCallBack.DataType.H264_KEY -> {
+                            rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, true)
+                        }
+                        IEncodeDataCallBack.DataType.H264 -> {
+                            rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, false)
+                        }
+                        IEncodeDataCallBack.DataType.AAC -> {
+                            // Audio via USB dimatikan, abaikan callback ini
+                        }
                     }
-                    IEncodeDataCallBack.DataType.H264_KEY -> {
-                        rtmpPusher?.onVideoData(buffer, offset, size, timestampUs, true)
-                    }
-                    IEncodeDataCallBack.DataType.H264 -> {
-                        rtmpPusher?.onVideoData(buffer, offset, size, timestampUs, false)
-                    }
-                    IEncodeDataCallBack.DataType.AAC -> {
-                        rtmpPusher?.onAudioData(buffer, offset, size, timestampUs)
-                    }
+                } catch (e: Exception) {
+                    Log.e("UfcCamera", "Error processing encoded data: ${e.message}")
                 }
             }
         })
+    }
+
+    override fun initData() {
+        super.initData()
+        // Pindah ke setupEncodingCallbacks() yang dipanggil saat camera OPENED
     }
 
     /**
      * Memisahkan SPS dan PPS dari buffer gabungan library AUSBC.
      */
     private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
-        // Simpan posisi asli
         val originalPos = buffer.position()
         val originalLimit = buffer.limit()
 
@@ -167,10 +192,12 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     fun startEncoding() {
+        Log.i("UfcCamera", "startEncoding() requested")
         captureStreamStart()
     }
 
     fun stopEncoding() {
+        Log.i("UfcCamera", "stopEncoding() requested")
         captureStreamStop()
     }
 
