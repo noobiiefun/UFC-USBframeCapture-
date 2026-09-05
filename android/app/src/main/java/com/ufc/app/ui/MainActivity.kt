@@ -189,6 +189,11 @@ class MainActivity : AppCompatActivity() {
                 }
                 statusText.text = info
                 overlayText.text = info
+
+                // Tombol Start berubah jadi Stop begitu berhasil live,
+                // dan balik lagi begitu stream berhenti/putus
+                startStreamButton.visibility = if (status.youtubeConnected) View.GONE else View.VISIBLE
+                stopStreamButton.visibility = if (status.youtubeConnected) View.VISIBLE else View.GONE
             }
         }
     }

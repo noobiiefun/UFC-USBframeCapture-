@@ -111,11 +111,22 @@ class RtmpPusher : ConnectChecker {
     fun onVideoData(buffer: ByteBuffer, offset: Int, size: Int, timestampUs: Long, isKeyFrame: Boolean) {
         if (!isPushing) return
 
-        // Connect SETELAH metadata (SPS/PPS) masuk
+        // Connect SETELAH metadata (SPS/PPS) masuk.
+        // PENTING: connect() ini blocking (handshake TCP/RTMP ke YouTube).
+        // Kalau dipanggil langsung di sini, thread encode video (dari library
+        // AUSBC) akan freeze total selama proses connect -- itu penyebab
+        // "macet" saat Start Live. Jalankan di thread terpisah.
         if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting) {
             Log.i(TAG, "Metadata ready, connecting to server...")
             isConnecting = true
-            rtmpClient.connect(config.rtmpUrl)
+            Thread {
+                try {
+                    rtmpClient.connect(config.rtmpUrl)
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Gagal connect RTMP: ${e.message}")
+                    isConnecting = false
+                }
+            }.start()
             return
         }
 

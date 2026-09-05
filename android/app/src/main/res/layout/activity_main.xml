@@ -48,6 +48,7 @@
         android:id="@+id/draggableOverlay"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
+        android:layout_marginTop="56dp"
         android:background="#80000000"
         android:padding="8dp"
         app:layout_constraintTop_toTopOf="parent"
@@ -81,7 +82,7 @@
         android:text="Start Live"
         app:layout_constraintTop_toBottomOf="@id/statusText"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintEnd_toEndOf="@id/btnStopStream"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent" />
 
     <Button
@@ -89,8 +90,9 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:text="Stop Live"
+        android:visibility="gone"
         app:layout_constraintTop_toBottomOf="@id/statusText"
-        app:layout_constraintStart_toEndOf="@id/btnStartStream"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintBottom_toBottomOf="parent" />
 
