@@ -2,29 +2,34 @@ package com.ufc.app.stream
 
 import android.content.Context
 import android.media.MediaCodec
-import android.media.MediaFormat
 import android.util.Log
 import android.widget.Toast
 import com.pedro.common.AudioCodec
 import com.pedro.common.ConnectChecker
 import com.pedro.common.VideoCodec
-import com.pedro.encoder.Frame
-import com.pedro.encoder.audio.AudioEncoder
-import com.pedro.encoder.audio.GetAudioData
-import com.pedro.encoder.input.audio.GetMicrophoneData
-import com.pedro.encoder.input.audio.MicrophoneManager
 import com.pedro.rtmp.rtmp.RtmpClient
 import com.ufc.app.StatusRepository
 import java.nio.ByteBuffer
 
 /**
  * Membungkus komponen push RTMP menggunakan RtmpClient dasar (RootEncoder).
- * Menggunakan Mikrofon HP secara internal untuk suara guna menghindari Bad File Descriptor.
+ *
+ * Audio diambil LANGSUNG dari capture card (HDMI-in via UAC/USB Audio Class),
+ * diteruskan dari UfcCameraFragment.onDeviceAudioData(). Ini menggantikan
+ * pendekatan lama yang memakai mic internal HP sebagai workaround Bad File
+ * Descriptor -- sekarang bug itu diatasi dengan deep-copy buffer di
+ * UfcCameraFragment, jadi audio asli PC bisa dipakai langsung.
  */
 class RtmpPusher : ConnectChecker {
 
     companion object {
         private const val TAG = "RtmpPusher"
+
+        // Sample rate audio capture card. Kebanyakan dongle capture HDMI (mis.
+        // chip MS2130/MS2109) mengirim audio di 48kHz stereo. Kalau suara di
+        // stream terdengar terlalu cepat/lambat/pitch berubah, coba ganti ke
+        // 44100 -- itu tandanya capture card kamu sebenarnya di 44.1kHz.
+        private const val AUDIO_SAMPLE_RATE = 48000
     }
 
     data class Config(
@@ -41,10 +46,9 @@ class RtmpPusher : ConnectChecker {
     private var isConnecting = false
     private var isMetadataReady = false
     private var rtmpClient: RtmpClient = RtmpClient(this)
-    private var audioEncoder: AudioEncoder? = null
-    private var microphoneManager: MicrophoneManager? = null
-    
+
     private val videoInfo = MediaCodec.BufferInfo()
+    private val audioInfo = MediaCodec.BufferInfo()
     private var appContext: Context? = null
 
     fun configure(config: Config) {
@@ -60,7 +64,7 @@ class RtmpPusher : ConnectChecker {
         isPushing = true
         isConnecting = false
         isMetadataReady = false
-        
+
         try {
             // Reset RTMP Client
             rtmpClient = RtmpClient(this)
@@ -68,32 +72,7 @@ class RtmpPusher : ConnectChecker {
             rtmpClient.setAudioCodec(AudioCodec.AAC)
             rtmpClient.setVideoResolution(config.width, config.height)
             rtmpClient.setFps(config.fps)
-            rtmpClient.setAudioInfo(44100, true) // Stereo 44.1kHz
-
-            // Inisialisasi Audio HP (Mic)
-            audioEncoder = AudioEncoder(object : GetAudioData {
-                override fun getAudioData(audioBuffer: ByteBuffer, info: MediaCodec.BufferInfo) {
-                    if (rtmpClient.isStreaming) {
-                        rtmpClient.sendAudio(audioBuffer, info)
-                    }
-                }
-                override fun onAudioFormat(mediaFormat: MediaFormat) {
-                    // Muxer tidak digunakan di sini
-                }
-            })
-            
-            // Set bitrate audio (128kbps default)
-            audioEncoder?.prepareAudioEncoder(128 * 1024, 44100, true)
-            
-            microphoneManager = MicrophoneManager(object : GetMicrophoneData {
-                override fun inputPCMData(frame: Frame) {
-                    audioEncoder?.inputPCMData(frame)
-                }
-            })
-            
-            microphoneManager?.createMicrophone(44100, true, false, false)
-            microphoneManager?.start()
-            audioEncoder?.start()
+            rtmpClient.setAudioInfo(AUDIO_SAMPLE_RATE, true) // Stereo
 
             Toast.makeText(context, "Menghubungkan ke YouTube...", Toast.LENGTH_SHORT).show()
         } catch (e: Throwable) {
@@ -116,19 +95,15 @@ class RtmpPusher : ConnectChecker {
         isPushing = false
         isConnecting = false
         isMetadataReady = false
-        
+
         try {
-            microphoneManager?.stop()
-            audioEncoder?.stop()
             if (rtmpClient.isStreaming) {
                 rtmpClient.disconnect()
             }
         } catch (e: Throwable) {
             e.printStackTrace()
         }
-        
-        microphoneManager = null
-        audioEncoder = null
+
         markConnected(false)
         Log.i(TAG, "Stream stopped")
     }
@@ -149,6 +124,19 @@ class RtmpPusher : ConnectChecker {
             videoInfo.set(offset, size, timestampUs, if (isKeyFrame) MediaCodec.BUFFER_FLAG_KEY_FRAME else 0)
             rtmpClient.sendVideo(buffer, videoInfo)
         }
+    }
+
+    /**
+     * Audio mentah (raw AAC, tanpa ADTS) dari capture card, diteruskan
+     * langsung ke RtmpClient tanpa lewat encoder tambahan -- capture card
+     * (via library AUSBC) sudah meng-encode ke AAC duluan.
+     */
+    fun onDeviceAudioData(buffer: ByteBuffer, size: Int, timestampUs: Long) {
+        if (!isPushing) return
+        if (!rtmpClient.isStreaming) return
+
+        audioInfo.set(0, size, timestampUs, 0)
+        rtmpClient.sendAudio(buffer, audioInfo)
     }
 
     fun setVideoMetadata(sps: ByteBuffer, pps: ByteBuffer) {

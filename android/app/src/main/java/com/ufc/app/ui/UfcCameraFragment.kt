@@ -24,6 +24,7 @@ class UfcCameraFragment : CameraFragment() {
     private var previewView: AspectRatioTextureView? = null
     private var container: FrameLayout? = null
     private var videoBufferCopy: ByteBuffer? = null
+    private var audioBufferCopy: ByteBuffer? = null
     private var isClosing = false
 
     var rtmpPusher: RtmpPusher? = null
@@ -68,7 +69,11 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            .setAudioSource(CameraRequest.AudioSource.NONE) // MATIKAN Audio USB (UAC) total untuk hindari ioctl error
+            // Ambil audio LANGSUNG dari capture card (HDMI-in via UAC), bukan mic HP.
+            // SOURCE_DEV_MIC = audio device UVC/UAC. Buffer AAC-nya di-deep-copy
+            // di setupEncodingCallbacks() supaya tidak kena Bad FD/ioctl error
+            // seperti isu lama yang dulu memaksa audio ini dimatikan total.
+            .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC)
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
@@ -109,23 +114,34 @@ class UfcCameraFragment : CameraFragment() {
                 timestamp: Long
             ) {
                 if (isClosing) return
-                
-                // Deep Copy data ke buffer mandiri agar tidak kena Bad FD (ioctl error)
-                // Ini mencegah sistem kamera mengambil kembali memori sebelum data terkirim
-                if (videoBufferCopy == null || videoBufferCopy!!.capacity() < size) {
-                    videoBufferCopy = ByteBuffer.allocateDirect(size * 2)
-                }
-                
+
+                val isAudio = type == IEncodeDataCallBack.DataType.AAC
+
                 try {
-                    videoBufferCopy!!.clear()
+                    // Deep Copy data ke buffer mandiri agar tidak kena Bad FD (ioctl error).
+                    // Video dan audio pakai buffer terpisah supaya tidak saling timpa
+                    // kalau kedua callback ini datang berdekatan.
+                    val target: ByteBuffer = if (isAudio) {
+                        if (audioBufferCopy == null || audioBufferCopy!!.capacity() < size) {
+                            audioBufferCopy = ByteBuffer.allocateDirect(size * 2)
+                        }
+                        audioBufferCopy!!
+                    } else {
+                        if (videoBufferCopy == null || videoBufferCopy!!.capacity() < size) {
+                            videoBufferCopy = ByteBuffer.allocateDirect(size * 2)
+                        }
+                        videoBufferCopy!!
+                    }
+
+                    target.clear()
                     val originalPos = buffer.position()
                     val originalLimit = buffer.limit()
-                    
+
                     buffer.position(offset)
                     buffer.limit(offset + size)
-                    videoBufferCopy!!.put(buffer)
-                    videoBufferCopy!!.flip()
-                    
+                    target.put(buffer)
+                    target.flip()
+
                     // Kembalikan posisi asli buffer library
                     buffer.position(originalPos)
                     buffer.limit(originalLimit)
@@ -136,20 +152,22 @@ class UfcCameraFragment : CameraFragment() {
                     when (type) {
                         IEncodeDataCallBack.DataType.H264_SPS -> {
                             Log.v("UfcCamera", "H264_SPS received")
-                            extractSpsPps(videoBufferCopy!!, size)
+                            extractSpsPps(target, size)
                         }
                         IEncodeDataCallBack.DataType.H264_KEY -> {
-                            rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, true)
+                            rtmpPusher?.onVideoData(target, 0, size, timestampUs, true)
                         }
                         IEncodeDataCallBack.DataType.H264 -> {
-                            rtmpPusher?.onVideoData(videoBufferCopy!!, 0, size, timestampUs, false)
+                            rtmpPusher?.onVideoData(target, 0, size, timestampUs, false)
                         }
                         IEncodeDataCallBack.DataType.AAC -> {
-                            // Abaikan audio dari USB, kita pakai Mic HP via RtmpPusher
+                            // Audio asli dari capture card (HDMI-in), diteruskan langsung
+                            // sebagai raw AAC (tanpa ADTS, sesuai kontrak IEncodeDataCallBack)
+                            rtmpPusher?.onDeviceAudioData(target, size, timestampUs)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("UfcCamera", "Gagal salin buffer video: ${e.message}")
+                    Log.e("UfcCamera", "Gagal salin buffer ${if (isAudio) "audio" else "video"}: ${e.message}")
                 }
             }
         })

@@ -9,12 +9,14 @@ class StreamConfig(context: Context) {
     private val prefs = context.getSharedPreferences("ufc_prefs", Context.MODE_PRIVATE)
 
     var rtmpUrl: String
+        // trim() mencegah spasi/newline nyasar (mis. dari copy-paste) yang bikin
+        // RTMP server nolak koneksi instan ("End of stream")
         get() = prefs.getString("rtmp_url", "rtmp://a.rtmp.youtube.com/live2/") ?: ""
-        set(value) = prefs.edit().putString("rtmp_url", value).apply()
+        set(value) = prefs.edit().putString("rtmp_url", value.trim()).apply()
 
     var streamKey: String
         get() = prefs.getString("stream_key", "") ?: ""
-        set(value) = prefs.edit().putString("stream_key", value).apply()
+        set(value) = prefs.edit().putString("stream_key", value.trim()).apply()
 
     var resolutionWidth: Int
         get() = prefs.getInt("res_w", 854)
