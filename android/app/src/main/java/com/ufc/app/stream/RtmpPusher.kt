@@ -30,6 +30,11 @@ class RtmpPusher : ConnectChecker {
         // stream terdengar terlalu cepat/lambat/pitch berubah, coba ganti ke
         // 44100 -- itu tandanya capture card kamu sebenarnya di 44.1kHz.
         private const val AUDIO_SAMPLE_RATE = 48000
+
+        // Jeda sebelum coba reconnect otomatis kalau koneksi putus/gagal
+        // (mis. "Broken pipe" karena hiccup jaringan sesaat). Ini mencegah
+        // spam percobaan connect() tiap frame video baru.
+        private const val RECONNECT_DELAY_MS = 3000L
     }
 
     data class Config(
@@ -46,6 +51,8 @@ class RtmpPusher : ConnectChecker {
     private var isConnecting = false
     private var isMetadataReady = false
     private var rtmpClient: RtmpClient = RtmpClient(this)
+    private var lastConnectAttemptMs = 0L
+    private var hasShownFailureToast = false
 
     private val videoInfo = MediaCodec.BufferInfo()
     private val audioInfo = MediaCodec.BufferInfo()
@@ -64,6 +71,8 @@ class RtmpPusher : ConnectChecker {
         isPushing = true
         isConnecting = false
         isMetadataReady = false
+        lastConnectAttemptMs = 0L
+        hasShownFailureToast = false
 
         try {
             // Reset RTMP Client
@@ -116,9 +125,18 @@ class RtmpPusher : ConnectChecker {
         // Kalau dipanggil langsung di sini, thread encode video (dari library
         // AUSBC) akan freeze total selama proses connect -- itu penyebab
         // "macet" saat Start Live. Jalankan di thread terpisah.
-        if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting) {
+        //
+        // Juga berfungsi sebagai AUTO-RECONNECT: kalau koneksi putus di
+        // tengah jalan (mis. "Broken pipe" karena jaringan hiccup), kondisi
+        // ini otomatis kepenuhi lagi di frame video berikutnya dan akan
+        // coba connect ulang -- asal sudah lewat jeda RECONNECT_DELAY_MS
+        // supaya tidak spam percobaan tiap frame.
+        val now = System.currentTimeMillis()
+        if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting &&
+            (now - lastConnectAttemptMs) > RECONNECT_DELAY_MS) {
             Log.i(TAG, "Metadata ready, connecting to server...")
             isConnecting = true
+            lastConnectAttemptMs = now
             Thread {
                 try {
                     rtmpClient.connect(config.rtmpUrl)
@@ -170,18 +188,24 @@ class RtmpPusher : ConnectChecker {
     override fun onConnectionSuccess() {
         Log.i(TAG, "RTMP Success")
         isConnecting = false
+        hasShownFailureToast = false
         markConnected(true)
     }
 
     override fun onConnectionFailed(reason: String) {
         val cleanReason = reason.ifBlank { "Timeout/Handshake Failure" }
-        Log.e(TAG, "RTMP Failed: $cleanReason")
+        Log.e(TAG, "RTMP Failed: $cleanReason -- akan coba reconnect otomatis")
         isConnecting = false
-        isPushing = false
+        // TIDAK set isPushing = false di sini -- biar onVideoData() otomatis
+        // coba reconnect lagi setelah RECONNECT_DELAY_MS. Kalau di-set false,
+        // stream akan mati permanen begitu ada hiccup jaringan sesaat.
         markConnected(false)
-        appContext?.let {
-            android.os.Handler(it.mainLooper).post {
-                Toast.makeText(it, "Koneksi Gagal: $cleanReason", Toast.LENGTH_LONG).show()
+        if (!hasShownFailureToast) {
+            hasShownFailureToast = true
+            appContext?.let {
+                android.os.Handler(it.mainLooper).post {
+                    Toast.makeText(it, "Koneksi Gagal: $cleanReason (mencoba reconnect...)", Toast.LENGTH_LONG).show()
+                }
             }
         }
     }
@@ -189,7 +213,9 @@ class RtmpPusher : ConnectChecker {
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) {}
     override fun onDisconnect() {
-        isPushing = false
+        Log.i(TAG, "RTMP Disconnected -- akan coba reconnect otomatis jika masih live")
+        // Sama seperti onConnectionFailed: biarkan pipeline hidup untuk
+        // auto-reconnect, jangan matikan isPushing di sini.
         markConnected(false)
     }
     override fun onAuthError() {
