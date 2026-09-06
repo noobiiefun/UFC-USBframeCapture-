@@ -50,5 +50,16 @@ class StreamConfig(context: Context) {
         get() = prefs.getBoolean("use_opengl", false)
         set(value) = prefs.edit().putBoolean("use_opengl", value).apply()
 
-    val fullUrl: String get() = "$rtmpUrl$streamKey"
+    // PENTING: ini akar penyebab bug "End of stream" yang berulang.
+    // Kalau rtmpUrl yang disimpan tidak diakhiri "/", hasil gabungan jadi
+    // rusak, contoh: "rtmp://x.rtmp.youtube.com/live2" + "9hd7-..." menjadi
+    // ".../live29hd7-..." (application name RTMP jadi salah total), dan
+    // server YouTube langsung menutup koneksi begitu terima app name yang
+    // tidak valid itu. Sekarang separator dipaksa ada di sini, bukan
+    // mengandalkan input user selalu benar.
+    val fullUrl: String
+        get() {
+            val base = if (rtmpUrl.endsWith("/")) rtmpUrl else "$rtmpUrl/"
+            return "$base$streamKey"
+        }
 }
