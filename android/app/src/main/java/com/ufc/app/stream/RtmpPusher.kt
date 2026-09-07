@@ -54,6 +54,13 @@ class RtmpPusher : ConnectChecker {
     private var lastConnectAttemptMs = 0L
     private var hasShownFailureToast = false
 
+    // Cache SPS/PPS supaya bisa dipasang ulang ke RtmpClient BARU saat
+    // reconnect -- MediaCodec cuma mengirim SPS/PPS sekali di awal, bukan
+    // tiap kali kita bikin ulang koneksi, jadi kalau tidak di-cache, client
+    // baru hasil reconnect tidak akan pernah punya info video yang valid.
+    private var cachedSps: ByteBuffer? = null
+    private var cachedPps: ByteBuffer? = null
+
     private val videoInfo = MediaCodec.BufferInfo()
     private val audioInfo = MediaCodec.BufferInfo()
     private var appContext: Context? = null
@@ -73,16 +80,11 @@ class RtmpPusher : ConnectChecker {
         isMetadataReady = false
         lastConnectAttemptMs = 0L
         hasShownFailureToast = false
+        cachedSps = null
+        cachedPps = null
 
         try {
-            // Reset RTMP Client
-            rtmpClient = RtmpClient(this)
-            rtmpClient.setVideoCodec(VideoCodec.H264)
-            rtmpClient.setAudioCodec(AudioCodec.AAC)
-            rtmpClient.setVideoResolution(config.width, config.height)
-            rtmpClient.setFps(config.fps)
-            rtmpClient.setAudioInfo(AUDIO_SAMPLE_RATE, true) // Stereo
-
+            createFreshClient()
             Toast.makeText(context, "Menghubungkan ke YouTube...", Toast.LENGTH_SHORT).show()
         } catch (e: Throwable) {
             Log.e(TAG, "Gagal inisialisasi pusher: ${e.message}")
@@ -97,6 +99,26 @@ class RtmpPusher : ConnectChecker {
                 fps = config.fps,
                 bitrateKbps = config.videoBitrateKbps
             )
+        }
+    }
+
+    /**
+     * Bikin instance RtmpClient baru dan pasang ulang konfigurasi + SPS/PPS
+     * (kalau sudah pernah ada). Dipanggil saat start() awal dan saat
+     * reconnect otomatis setelah koneksi putus.
+     */
+    private fun createFreshClient() {
+        rtmpClient = RtmpClient(this)
+        rtmpClient.setVideoCodec(VideoCodec.H264)
+        rtmpClient.setAudioCodec(AudioCodec.AAC)
+        rtmpClient.setVideoResolution(config.width, config.height)
+        rtmpClient.setFps(config.fps)
+        rtmpClient.setAudioInfo(AUDIO_SAMPLE_RATE, true) // Stereo
+
+        val sps = cachedSps
+        val pps = cachedPps
+        if (sps != null && pps != null) {
+            rtmpClient.setVideoInfo(sps.duplicate(), pps.duplicate(), null)
         }
     }
 
@@ -127,10 +149,10 @@ class RtmpPusher : ConnectChecker {
         // "macet" saat Start Live. Jalankan di thread terpisah.
         //
         // Juga berfungsi sebagai AUTO-RECONNECT: kalau koneksi putus di
-        // tengah jalan (mis. "Broken pipe" karena jaringan hiccup), kondisi
-        // ini otomatis kepenuhi lagi di frame video berikutnya dan akan
-        // coba connect ulang -- asal sudah lewat jeda RECONNECT_DELAY_MS
-        // supaya tidak spam percobaan tiap frame.
+        // tengah jalan (mis. "Broken pipe"), kondisi ini otomatis kepenuhi
+        // lagi di frame video berikutnya dan coba connect ulang ke
+        // rtmpClient yang SUDAH DI-REFRESH oleh onConnectionFailed/onDisconnect
+        // -- itu sebabnya isConnecting dijaga true sampai client baru siap.
         val now = System.currentTimeMillis()
         if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting &&
             (now - lastConnectAttemptMs) > RECONNECT_DELAY_MS) {
@@ -171,6 +193,18 @@ class RtmpPusher : ConnectChecker {
     fun setVideoMetadata(sps: ByteBuffer, pps: ByteBuffer) {
         if (!isPushing) return
         Log.i(TAG, "SPS/PPS received")
+
+        // Simpan salinan independen untuk dipakai ulang saat reconnect
+        // (buffer asli dari fragment akan dipakai ulang/ditimpa nanti).
+        val spsCopy = ByteBuffer.allocateDirect(sps.remaining())
+        spsCopy.put(sps.duplicate())
+        spsCopy.flip()
+        val ppsCopy = ByteBuffer.allocateDirect(pps.remaining())
+        ppsCopy.put(pps.duplicate())
+        ppsCopy.flip()
+        cachedSps = spsCopy
+        cachedPps = ppsCopy
+
         rtmpClient.setVideoInfo(sps, pps, null)
         isMetadataReady = true
     }
@@ -184,6 +218,31 @@ class RtmpPusher : ConnectChecker {
         }
     }
 
+    /**
+     * Bersihkan client yang bermasalah dan siapkan yang baru untuk
+     * reconnect. isConnecting sengaja TETAP true sampai proses ini selesai,
+     * supaya onVideoData tidak menembak connect() ke rtmpClient lama yang
+     * sedang di tengah proses pembersihan/pergantian.
+     */
+    private fun resetClientForReconnect() {
+        isConnecting = true
+        Thread {
+            try {
+                rtmpClient.disconnect()
+            } catch (e: Throwable) {
+                Log.e(TAG, "Gagal disconnect client lama: ${e.message}")
+            }
+            if (isPushing && cachedSps != null && cachedPps != null) {
+                try {
+                    createFreshClient()
+                } catch (e: Throwable) {
+                    Log.e(TAG, "Gagal bikin client baru untuk reconnect: ${e.message}")
+                }
+            }
+            isConnecting = false
+        }.start()
+    }
+
     // --- ConnectChecker Implementation ---
     override fun onConnectionSuccess() {
         Log.i(TAG, "RTMP Success")
@@ -195,11 +254,10 @@ class RtmpPusher : ConnectChecker {
     override fun onConnectionFailed(reason: String) {
         val cleanReason = reason.ifBlank { "Timeout/Handshake Failure" }
         Log.e(TAG, "RTMP Failed: $cleanReason -- akan coba reconnect otomatis")
-        isConnecting = false
-        // TIDAK set isPushing = false di sini -- biar onVideoData() otomatis
-        // coba reconnect lagi setelah RECONNECT_DELAY_MS. Kalau di-set false,
-        // stream akan mati permanen begitu ada hiccup jaringan sesaat.
+        // TIDAK set isPushing = false di sini -- biar pipeline tetap hidup
+        // dan auto-reconnect (via resetClientForReconnect) yang bekerja.
         markConnected(false)
+        resetClientForReconnect()
         if (!hasShownFailureToast) {
             hasShownFailureToast = true
             appContext?.let {
@@ -214,9 +272,8 @@ class RtmpPusher : ConnectChecker {
     override fun onNewBitrate(bitrate: Long) {}
     override fun onDisconnect() {
         Log.i(TAG, "RTMP Disconnected -- akan coba reconnect otomatis jika masih live")
-        // Sama seperti onConnectionFailed: biarkan pipeline hidup untuk
-        // auto-reconnect, jangan matikan isPushing di sini.
         markConnected(false)
+        resetClientForReconnect()
     }
     override fun onAuthError() {
         onConnectionFailed("Auth Error")
