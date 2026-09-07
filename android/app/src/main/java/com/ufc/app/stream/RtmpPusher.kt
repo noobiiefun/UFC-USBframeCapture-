@@ -47,12 +47,19 @@ class RtmpPusher : ConnectChecker {
     )
 
     private var config: Config = Config()
-    private var isPushing = false
-    private var isConnecting = false
-    private var isMetadataReady = false
-    private var rtmpClient: RtmpClient = RtmpClient(this)
-    private var lastConnectAttemptMs = 0L
-    private var hasShownFailureToast = false
+    @Volatile private var isPushing = false
+    @Volatile private var isConnecting = false
+    @Volatile private var isMetadataReady = false
+    @Volatile private var rtmpClient: RtmpClient = RtmpClient(this)
+    @Volatile private var lastConnectAttemptMs = 0L
+    @Volatile private var hasShownFailureToast = false
+    @Volatile private var consecutiveFailures = 0
+
+    // Batas percobaan reconnect beruntun. Tanpa batas ini, kalau server
+    // terus-menerus menolak (mis. key invalid/network down total), app akan
+    // spawn Thread baru tanpa henti -- boros CPU & bisa memicu masalah lain
+    // (mis. resource/file descriptor) di device yang sudah pas-pasan ini.
+    private val MAX_CONSECUTIVE_FAILURES = 5
 
     // Cache SPS/PPS supaya bisa dipasang ulang ke RtmpClient BARU saat
     // reconnect -- MediaCodec cuma mengirim SPS/PPS sekali di awal, bukan
@@ -82,6 +89,7 @@ class RtmpPusher : ConnectChecker {
         hasShownFailureToast = false
         cachedSps = null
         cachedPps = null
+        consecutiveFailures = 0
 
         try {
             createFreshClient()
@@ -153,15 +161,30 @@ class RtmpPusher : ConnectChecker {
         // lagi di frame video berikutnya dan coba connect ulang ke
         // rtmpClient yang SUDAH DI-REFRESH oleh onConnectionFailed/onDisconnect
         // -- itu sebabnya isConnecting dijaga true sampai client baru siap.
-        val now = System.currentTimeMillis()
-        if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting &&
-            (now - lastConnectAttemptMs) > RECONNECT_DELAY_MS) {
-            Log.i(TAG, "Metadata ready, connecting to server...")
-            isConnecting = true
-            lastConnectAttemptMs = now
+        //
+        // synchronized DI SINI PENTING: onVideoData dipanggil berkali-kali
+        // per detik dari thread encode video. Tanpa lock, dua frame yang
+        // datang nyaris bersamaan bisa sama-sama lolos pengecekan sebelum
+        // isConnecting/lastConnectAttemptMs sempat ke-update -- itu bug yang
+        // bikin reconnect spam tiap 5-10ms alih-alih tiap 3 detik.
+        var shouldConnect = false
+        synchronized(this) {
+            val now = System.currentTimeMillis()
+            if (isMetadataReady && !rtmpClient.isStreaming && !isConnecting &&
+                consecutiveFailures < MAX_CONSECUTIVE_FAILURES &&
+                (now - lastConnectAttemptMs) > RECONNECT_DELAY_MS) {
+                isConnecting = true
+                lastConnectAttemptMs = now
+                shouldConnect = true
+            }
+        }
+
+        if (shouldConnect) {
+            Log.i(TAG, "Metadata ready, connecting to server... (percobaan ke-${consecutiveFailures + 1})")
+            val clientToConnect = rtmpClient
             Thread {
                 try {
-                    rtmpClient.connect(config.rtmpUrl)
+                    clientToConnect.connect(config.rtmpUrl)
                 } catch (e: Throwable) {
                     Log.e(TAG, "Gagal connect RTMP: ${e.message}")
                     isConnecting = false
@@ -232,7 +255,8 @@ class RtmpPusher : ConnectChecker {
             } catch (e: Throwable) {
                 Log.e(TAG, "Gagal disconnect client lama: ${e.message}")
             }
-            if (isPushing && cachedSps != null && cachedPps != null) {
+            if (isPushing && consecutiveFailures < MAX_CONSECUTIVE_FAILURES &&
+                cachedSps != null && cachedPps != null) {
                 try {
                     createFreshClient()
                 } catch (e: Throwable) {
@@ -243,20 +267,40 @@ class RtmpPusher : ConnectChecker {
         }.start()
     }
 
+    private fun giveUpAfterTooManyFailures() {
+        Log.e(TAG, "Sudah $MAX_CONSECUTIVE_FAILURES kali gagal beruntun, berhenti mencoba.")
+        isPushing = false
+        appContext?.let {
+            android.os.Handler(it.mainLooper).post {
+                Toast.makeText(
+                    it,
+                    "Gagal live setelah $MAX_CONSECUTIVE_FAILURES kali percobaan. Cek internet/URL/stream key, lalu Start Live lagi.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
     // --- ConnectChecker Implementation ---
     override fun onConnectionSuccess() {
         Log.i(TAG, "RTMP Success")
         isConnecting = false
         hasShownFailureToast = false
+        consecutiveFailures = 0
         markConnected(true)
     }
 
     override fun onConnectionFailed(reason: String) {
         val cleanReason = reason.ifBlank { "Timeout/Handshake Failure" }
-        Log.e(TAG, "RTMP Failed: $cleanReason -- akan coba reconnect otomatis")
+        consecutiveFailures++
+        Log.e(TAG, "RTMP Failed ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES): $cleanReason")
+        markConnected(false)
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            giveUpAfterTooManyFailures()
+            return
+        }
         // TIDAK set isPushing = false di sini -- biar pipeline tetap hidup
         // dan auto-reconnect (via resetClientForReconnect) yang bekerja.
-        markConnected(false)
         resetClientForReconnect()
         if (!hasShownFailureToast) {
             hasShownFailureToast = true
@@ -271,8 +315,13 @@ class RtmpPusher : ConnectChecker {
     override fun onConnectionStarted(url: String) {}
     override fun onNewBitrate(bitrate: Long) {}
     override fun onDisconnect() {
-        Log.i(TAG, "RTMP Disconnected -- akan coba reconnect otomatis jika masih live")
+        consecutiveFailures++
+        Log.i(TAG, "RTMP Disconnected ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES) -- akan coba reconnect otomatis jika masih live")
         markConnected(false)
+        if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+            giveUpAfterTooManyFailures()
+            return
+        }
         resetClientForReconnect()
     }
     override fun onAuthError() {
