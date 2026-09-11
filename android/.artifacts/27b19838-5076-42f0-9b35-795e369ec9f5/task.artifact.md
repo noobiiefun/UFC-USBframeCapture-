@@ -1,0 +1,5 @@
+- [x] Migrasi Suara & Stabilisasi RTMP
+    - [x] Update `app/build.gradle.kts` (Hapus abiFilters)
+    - [x] Update `UfcCameraFragment.kt` (Disable USB Audio & Sync Clock)
+    - [x] Update `RtmpPusher.kt` (Integrasi Mic HP & Fix Broken Pipe)
+- [x] Verifikasi & Build (SUCCESS)

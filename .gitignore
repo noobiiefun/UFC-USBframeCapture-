@@ -1,0 +1,21 @@
+# Android
+android/.gradle/
+android/.idea/
+android/local.properties
+android/app/build/
+android/build/
+*.apk
+*.aab
+android/java_pid2612.hprof
+*.hprof
+
+# Python
+pc-monitor/venv/
+pc-monitor/__pycache__/
+pc-monitor/build/
+pc-monitor/dist/
+pc-monitor/*.spec
+
+# OS
+.DS_Store
+Thumbs.db
