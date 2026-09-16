@@ -1,38 +1,36 @@
-# Rencana Perbaikan: Solusi Crash "Configure" dan Stabilitas Stream
+# Rencana Perbaikan: Koneksi YouTube Stabil dan Pemulihan Suara Capture Card
 
-Rencana ini bertujuan untuk mengatasi *force close* (crash) yang terjadi saat mengklik tombol Live dan memperbaiki masalah "Bad file descriptor" dengan cara mengalihkan sumber suara ke mikrofon HP.
+Rencana ini bertujuan untuk memperbaiki masalah "Broken Pipe" (aliran video macet) dan mengembalikan suara asli dari capture card (HDMI) Anda, serta menghentikan error `ioctl` secara total.
 
-## Analisis Masalah
+## Analisis Masalah Mendalam
 
-1.  **Crash "Configure"**: Kemungkinan terjadi karena inisialisasi mesin streaming dilakukan di thread yang salah atau adanya ketidakcocokan parameter saat kamera sedang aktif.
-2.  **Bad File Descriptor (ioctl error)**: Ini adalah tanda bentrokan memori pada driver USB (MediaTek/Xiaomi). Mencoba mengambil suara dari USB (UAC) sambil mengambil video seringkali membuat driver USB "hang" atau crash.
-3.  **Unstable 32-bit Mode**: Memaksa mode 32-bit pada HP modern 64-bit dapat menyebabkan ketidakstabilan sistem.
+1.  **Bug Aliran Data (Penyebab Broken Pipe)**: Saya menemukan bug kritis di mana data video "terkuras" habis sebelum sempat dikirim ke YouTube. Aplikasi membaca data untuk mencari identitas video (SPS/PPS), tapi lupa "mengisi ulang" atau mengembalikan penunjuk data ke awal. Akibatnya, YouTube menerima data kosong dan memutuskan koneksi.
+2.  **Ketidakcocokan Metadata**: YouTube memerlukan data SPS/PPS tanpa kode awalan (start code). Saat ini, aplikasi mengirimkan metadata mentah yang masih mengandung sampah kode sistem, sehingga server YouTube menolak handshake.
+3.  **Masalah Suara Perangkat**: Anda ingin suara asli dari capture card. Masalah `libUACAudio.so` sebelumnya terjadi karena library mencoba memuat driver 32-bit di sistem 64-bit. Saya akan mencoba cara baru yang lebih stabil untuk memanggil suara USB ini.
+4.  **Error `ioctl` Persistent**: Masalah ini tetap ada karena kita menggunakan memori sistem langsung (ION) yang sangat sensitif. Saya akan mengalihkan sistem salin data menggunakan `ByteArray` murni (memori Java), yang jauh lebih aman bagi driver MediaTek/Xiaomi.
 
 ## Perubahan yang Diusulkan
 
-### 1. Migrasi Suara ke Mikrofon HP (Solusi Utama)
-- Mengubah sumber suara dari **USB (Capture Card)** ke **Mic (Internal HP)**.
-- **Alasan**: Ini menghilangkan kebutuhan akan `libUACAudio.so` (yang sering hilang/crash) dan mengurangi beban daya pada port USB, sehingga error `ioctl` tidak akan muncul lagi. Suara akan jauh lebih stabil dan YouTube tidak akan menolak koneksi.
+### 1. Perbaikan Aliran Video (`UfcCameraFragment.kt`)
+- **Fix Data Pointer**: Memastikan penunjuk memori (`position`) dikembalikan ke nol setiap kali data akan dikirim ke mesin streaming.
+- **Pure ByteArray Copy**: Menggunakan `ByteArray` untuk menyalin gambar. Ini akan menghilangkan error `Bad file descriptor` karena tidak lagi menyentuh memori sistem ION secara tidak sah.
+- **SPS/PPS Clean Up**: Memotong kode awalan `00 00 00 01` dari metadata video sebelum dikirim ke YouTube.
 
-### 2. Manajemen Memori Aman (`UfcCameraFragment.kt`)
-- Melakukan **Deep Copy** pada buffer video sebelum dikirim ke mesin streaming.
-- **Alasan**: Mencegah crash "Bad file descriptor" yang terjadi jika sistem kamera mengambil kembali memori sebelum data sempat terkirim ke YouTube.
+### 2. Pemulihan Suara Capture Card (`UfcCameraFragment.kt` & `RtmpPusher.kt`)
+- **Enable USB Audio**: Mengaktifkan kembali `SOURCE_DEV_MIC` di kamera.
+- **Synchronized Audio**: Meneruskan suara asli capture card ke YouTube menggunakan jam sinkronisasi yang sama dengan video agar suara tidak telat.
+- **Fail-safe Audio**: Jika suara USB gagal (crash), aplikasi akan otomatis beralih ke Mic HP tanpa mematikan stream.
 
-### 3. Peningkatan Keamanan Koneksi (`RtmpPusher.kt`)
-- Menambahkan **Uncaught Exception Handler** yang akan memunculkan pesan eror asli jika aplikasi tetap crash, sehingga kita tidak menebak-nebak lagi.
-- Membungkus setiap proses pengiriman data dengan blok `try-catch` yang sangat ketat.
-
-### 4. Optimalisasi Arsitektur (`build.gradle.kts`)
-- Menghapus pembatasan 32-bit (`abiFilters`). Kita akan biarkan aplikasi berjalan di mode 64-bit asli agar performa maksimal di HP Xiaomi Anda.
+### 3. Stabilisasi RTMP (`RtmpPusher.kt`)
+- **Handshake Guard**: Menunggu metadata video yang benar-benar bersih sebelum memulai koneksi.
+- **Unified Timestamp**: Tetap menggunakan sistem jam tunggal untuk menjamin YouTube tidak memutus koneksi.
 
 ## Rincian File yang Diubah
 
 #### [MODIFY] [UfcCameraFragment.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/UfcCameraFragment.kt)
-#### [MODIFY] [MainActivity.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/ui/MainActivity.kt)
 #### [MODIFY] [RtmpPusher.kt](file:///F:/coding/UFC-USBframeCapture-/android/app/src/main/java/com/ufc/app/stream/RtmpPusher.kt)
-#### [MODIFY] [app/build.gradle.kts](file:///F:/coding/UFC-USBframeCapture-/android/app/build.gradle.kts)
 
 ## Rencana Verifikasi
-- Jalankan aplikasi, pastikan tombol Run aktif (64-bit mode).
-- Klik **Start Live**. Jika ada crash, baca pesan yang muncul di layar.
-- Cek YouTube, suara harusnya terdengar dari mikrofon HP (Anda bisa menaruh HP di dekat speaker jika ingin suara game masuk).
+- Klik **USB** -> Gambar capture card harus muncul lancar tanpa error `ioctl`.
+- Klik **Start Live**. Tunggu indikator **YT: LIVE**.
+- Cek YouTube: Gambar harus muncul lancar dan suara harus terdengar (asli dari perangkat HDMI Anda).

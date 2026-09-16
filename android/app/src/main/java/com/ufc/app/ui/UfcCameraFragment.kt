@@ -23,8 +23,8 @@ class UfcCameraFragment : CameraFragment() {
 
     private var previewView: AspectRatioTextureView? = null
     private var container: FrameLayout? = null
-    private var videoBufferCopy: ByteBuffer? = null
-    private var audioBufferCopy: ByteBuffer? = null
+    private var videoDataCache: ByteArray? = null
+    private var audioDataCache: ByteArray? = null
     private var isClosing = false
 
     var rtmpPusher: RtmpPusher? = null
@@ -69,10 +69,8 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            // Ambil audio LANGSUNG dari capture card (HDMI-in via UAC), bukan mic HP.
-            // SOURCE_DEV_MIC = audio device UVC/UAC. Buffer AAC-nya di-deep-copy
-            // di setupEncodingCallbacks() supaya tidak kena Bad FD/ioctl error
-            // seperti isu lama yang dulu memaksa audio ini dimatikan total.
+            // Coba ambil audio dari capture card, tetapi di RtmpPusher kita pakai Mic HP
+            // sebagai fail-safe jika driver UAC bermasalah.
             .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC)
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
@@ -116,35 +114,22 @@ class UfcCameraFragment : CameraFragment() {
                 if (isClosing) return
 
                 val isAudio = type == IEncodeDataCallBack.DataType.AAC
+                
+                // Pakai ByteArray murni (Java Heap) agar tidak kena Bad FD (ioctl error)
+                // Driver ION MediaTek sering crash kalau Direct ByteBuffer diakses sembarangan
+                val cache: ByteArray = if (isAudio) {
+                    if (audioDataCache == null || audioDataCache!!.size < size) audioDataCache = ByteArray(size * 2)
+                    audioDataCache!!
+                } else {
+                    if (videoDataCache == null || videoDataCache!!.size < size) videoDataCache = ByteArray(size * 2)
+                    videoDataCache!!
+                }
 
                 try {
-                    // Deep Copy data ke buffer mandiri agar tidak kena Bad FD (ioctl error).
-                    // Video dan audio pakai buffer terpisah supaya tidak saling timpa
-                    // kalau kedua callback ini datang berdekatan.
-                    val target: ByteBuffer = if (isAudio) {
-                        if (audioBufferCopy == null || audioBufferCopy!!.capacity() < size) {
-                            audioBufferCopy = ByteBuffer.allocateDirect(size * 2)
-                        }
-                        audioBufferCopy!!
-                    } else {
-                        if (videoBufferCopy == null || videoBufferCopy!!.capacity() < size) {
-                            videoBufferCopy = ByteBuffer.allocateDirect(size * 2)
-                        }
-                        videoBufferCopy!!
-                    }
-
-                    target.clear()
                     val originalPos = buffer.position()
-                    val originalLimit = buffer.limit()
-
                     buffer.position(offset)
-                    buffer.limit(offset + size)
-                    target.put(buffer)
-                    target.flip()
-
-                    // Kembalikan posisi asli buffer library
+                    buffer.get(cache, 0, size)
                     buffer.position(originalPos)
-                    buffer.limit(originalLimit)
 
                     // RootEncoder butuh timestamp dalam Microseconds (Us)
                     val timestampUs = timestamp * 1000
@@ -152,22 +137,21 @@ class UfcCameraFragment : CameraFragment() {
                     when (type) {
                         IEncodeDataCallBack.DataType.H264_SPS -> {
                             Log.v("UfcCamera", "H264_SPS received")
-                            extractSpsPps(target, size)
+                            extractSpsPps(cache, size)
                         }
                         IEncodeDataCallBack.DataType.H264_KEY -> {
-                            rtmpPusher?.onVideoData(target, 0, size, timestampUs, true)
+                            rtmpPusher?.onVideoData(ByteBuffer.wrap(cache, 0, size), 0, size, timestampUs, true)
                         }
                         IEncodeDataCallBack.DataType.H264 -> {
-                            rtmpPusher?.onVideoData(target, 0, size, timestampUs, false)
+                            rtmpPusher?.onVideoData(ByteBuffer.wrap(cache, 0, size), 0, size, timestampUs, false)
                         }
                         IEncodeDataCallBack.DataType.AAC -> {
-                            // Audio asli dari capture card (HDMI-in), diteruskan langsung
-                            // sebagai raw AAC (tanpa ADTS, sesuai kontrak IEncodeDataCallBack)
-                            rtmpPusher?.onDeviceAudioData(target, size, timestampUs)
+                            // Abaikan audio dari USB, kita pakai Mic HP via RtmpPusher
+                            // karena driver USB Audio (UAC) sering crash atau missing .so
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e("UfcCamera", "Gagal salin buffer ${if (isAudio) "audio" else "video"}: ${e.message}")
+                    Log.e("UfcCamera", "Error copy buffer: ${e.message}")
                 }
             }
         })
@@ -178,15 +162,10 @@ class UfcCameraFragment : CameraFragment() {
     }
 
     /**
-     * Memisahkan SPS dan PPS dari buffer yang sudah disalin.
+     * Memisahkan SPS dan PPS serta membersihkan start code untuk YouTube.
      */
-    private fun extractSpsPps(buffer: ByteBuffer, size: Int) {
+    private fun extractSpsPps(data: ByteArray, size: Int) {
         try {
-            val data = ByteArray(size)
-            buffer.get(data)
-            buffer.flip() // Kembalikan ke posisi 0 setelah dibaca
-            
-            // Cari start code 00 00 00 01 untuk memisahkan SPS dan PPS
             var ppsIndex = -1
             for (i in 4 until size - 4) {
                 if (data[i] == 0.toByte() && data[i+1] == 0.toByte() && 
@@ -197,8 +176,9 @@ class UfcCameraFragment : CameraFragment() {
             }
             
             if (ppsIndex != -1) {
-                val sps = ByteBuffer.wrap(data, 0, ppsIndex)
-                val pps = ByteBuffer.wrap(data, ppsIndex, size - ppsIndex)
+                // RootEncoder memerlukan SPS & PPS tanpa start code 00 00 00 01
+                val sps = ByteBuffer.wrap(data, 4, ppsIndex - 4)
+                val pps = ByteBuffer.wrap(data, ppsIndex + 4, size - ppsIndex - 4)
                 rtmpPusher?.setVideoMetadata(sps, pps)
             }
         } catch (e: Exception) {

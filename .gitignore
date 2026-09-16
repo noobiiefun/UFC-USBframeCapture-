@@ -6,6 +6,8 @@ android/app/build/
 android/build/
 *.apk
 *.aab
+android/java_pid2612.hprof
+*.hprof
 
 # Python
 pc-monitor/venv/
