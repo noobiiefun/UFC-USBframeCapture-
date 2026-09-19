@@ -33,6 +33,14 @@
             android:label="Settings" />
 
         <activity
+            android:name=".ui.PreviewActivity"
+            android:label="Preview Mode"
+            android:theme="@style/Theme.App.Starting"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+
+        <activity
             android:name=".ui.MainActivity"
             android:theme="@style/Theme.App.Starting"
             android:exported="true"
