@@ -15,53 +15,51 @@ import java.nio.ByteBuffer
 /**
  * Membungkus komponen push RTMP menggunakan RtmpClient dasar (RootEncoder).
  *
- * Audio diambil LANGSUNG dari capture card (HDMI-in via UAC/USB Audio Class),
- * diteruskan dari UfcCameraFragment.onDeviceAudioData().
+ * Audio diambil dari mic internal HP (lihat catatan SOURCE_SYS_MIC di
+ * UfcCameraFragment.getCameraRequest()), diteruskan dari
+ * UfcCameraFragment.onDeviceAudioData().
  *
- * === PERBAIKAN PENTING (fix "Broken pipe") ===
- * Versi sebelumnya membaca/menulis `rtmpClient` dari BEBERAPA thread berbeda
- * tanpa lock bersama:
- *  - thread encode video (AUSBC) -> onVideoData() -> sendVideo()
- *  - thread encode audio (AUSBC) -> onDeviceAudioData() -> sendAudio()
- *  - thread reconnect (resetClientForReconnect) -> disconnect() + bikin objek baru
+ * === FIX #1 (sudah ada) -- race condition penyebab "Broken pipe" ===
+ * Semua akses ke `rtmpClient` (baca isStreaming, sendVideo, sendAudio,
+ * disconnect, penggantian objek saat reconnect) dibungkus SATU lock yang
+ * sama (`clientLock`), supaya thread video/audio tidak pernah menulis ke
+ * objek yang sedang di tengah proses disconnect/penggantian dari thread lain.
  *
- * Kalau thread reconnect memanggil disconnect() / mengganti objek rtmpClient
- * TEPAT saat thread video/audio sedang menulis ke objek RtmpClient yang sama,
- * hasilnya adalah menulis ke socket yang baru saja ditutup -> "Broken pipe"
- * (EPIPE). Ini murni race condition, bukan masalah jaringan.
+ * === FIX #2 (baru) -- "generation guard" untuk callback client lama (stale) ===
+ * Setiap kali RtmpClient baru dibuat (reconnect), dia dibungkus dengan
+ * ConnectChecker yang ditandai nomor generasi saat itu (`currentGeneration`).
+ * Kalau client LAMA (generasi sebelumnya) masih sempat memanggil
+ * onDisconnect()/onConnectionFailed() -- misalnya karena coroutine
+ * internalnya baru selesai di-cancel setelah client baru sudah dibuat --
+ * callback itu SEKARANG DIABAIKAN kalau generasinya sudah tidak aktif lagi.
  *
- * Solusinya: SEMUA akses ke `rtmpClient` (baca isStreaming, sendVideo,
- * sendAudio, disconnect, dan penggantian objek saat reconnect) sekarang
- * dibungkus satu lock yang sama (`clientLock`). Operasi jaringan yang lambat
- * (connect() -- handshake TCP/RTMP) TETAP dijalankan di luar lock supaya
- * tidak memblokir thread video/audio berkepanjangan; yang dikunci hanya
- * bagian yang menyentuh objek rtmpClient itu sendiri.
- *
- * Tambahan: sendVideo()/sendAudio() sekarang dibungkus try/catch. Kalau
- * gagal (mis. Broken pipe beneran karena koneksi putus mendadak), kita
- * langsung panggil onConnectionFailed() sendiri alih-alih menunggu callback
- * dari library yang kadang telat -- supaya reconnect terpicu lebih cepat.
+ * Tanpa ini: 1 kejadian "Broken pipe" nyata bisa memicu beberapa
+ * RtmpClient lama melapor onDisconnect() secara beruntun dalam
+ * hitungan milidetik (gema dari proses disconnect/cancel), dan semuanya
+ * ikut menambah `consecutiveFailures` -- sehingga kuota
+ * MAX_CONSECUTIVE_FAILURES habis dalam < 1 detik, JAUH sebelum percobaan
+ * reconnect yang sesungguhnya (butuh waktu untuk handshake TCP/RTMP) sempat
+ * selesai. Gejalanya: log menunjukkan "RTMP Disconnected (2/5)" sampai
+ * "(5/5)" dalam waktu berdekatan, padahal cuma ada 1 broken pipe beneran.
  */
-class RtmpPusher : ConnectChecker {
+class RtmpPusher {
 
     companion object {
         private const val TAG = "RtmpPusher"
 
-        // Sample rate audio capture card. Kebanyakan dongle capture HDMI (mis.
-        // chip MS2130/MS2109) mengirim audio di 48kHz stereo. Kalau suara di
-        // stream terdengar terlalu cepat/lambat/pitch berubah, coba ganti ke
-        // 44100 -- itu tandanya capture card kamu sebenarnya di 44.1kHz.
+        // Sample rate audio mic internal HP. Kalau nanti audio balik
+        // dipindah ke capture card (UAC), cek dulu apakah sample rate-nya
+        // beda (banyak dongle capture di 48kHz, sebagian di 44.1kHz).
         private const val AUDIO_SAMPLE_RATE = 48000
 
-        // Jeda sebelum coba reconnect otomatis kalau koneksi putus/gagal
-        // (mis. "Broken pipe" karena hiccup jaringan sesaat). Ini mencegah
-        // spam percobaan connect() tiap frame video baru.
+        // Jeda sebelum coba reconnect otomatis setelah koneksi putus/gagal.
+        // Mencegah spam percobaan connect() tiap frame video baru.
         private const val RECONNECT_DELAY_MS = 3000L
 
-        // Batas percobaan reconnect beruntun. Tanpa batas ini, kalau server
-        // terus-menerus menolak (mis. key invalid/network down total), app akan
-        // spawn Thread baru tanpa henti -- boros CPU & bisa memicu masalah lain
-        // (mis. resource/file descriptor) di device yang sudah pas-pasan ini.
+        // Batas percobaan reconnect beruntun. Dengan generation guard,
+        // angka ini sekarang benar-benar mencerminkan 5 kegagalan NYATA
+        // (bukan gema dari client lama), jadi lebih masuk akal untuk
+        // menyerah setelah 5 kali gagal beneran.
         private const val MAX_CONSECUTIVE_FAILURES = 5
     }
 
@@ -83,25 +81,63 @@ class RtmpPusher : ConnectChecker {
     @Volatile private var hasShownFailureToast = false
     @Volatile private var consecutiveFailures = 0
 
-    // === LOCK TUNGGAL ===
-    // Semua baca/tulis terhadap `rtmpClient` (termasu isStreaming, sendVideo,
-    // sendAudio, disconnect, dan penggantian objek via createFreshClientLocked)
-    // WAJIB lewat lock ini. Ini yang mencegah race condition penyebab
-    // "Broken pipe" yang dijelaskan di komentar kelas di atas.
+    // === LOCK TUNGGAL untuk semua akses ke rtmpClient (lihat catatan FIX #1) ===
     private val clientLock = Any()
-    private var rtmpClient: RtmpClient = RtmpClient(this)
+    private var rtmpClient: RtmpClient = RtmpClient(GenChecker(0))
 
-    // Cache SPS/PPS supaya bisa dipasang ulang ke RtmpClient BARU saat
-    // reconnect -- MediaCodec/capture card cuma mengirim SPS/PPS sekali di
-    // awal, bukan tiap kali kita bikin ulang koneksi, jadi kalau tidak
-    // di-cache, client baru hasil reconnect tidak akan pernah punya info
-    // video yang valid.
+    // === GENERATION GUARD (FIX #2) ===
+    // Dinaikkan setiap kali objek RtmpClient baru dibuat. HARUS dibaca/ditulis
+    // di dalam clientLock supaya konsisten dengan rtmpClient itu sendiri.
+    private var currentGeneration = 0
+
     private var cachedSps: ByteBuffer? = null
     private var cachedPps: ByteBuffer? = null
 
     private val videoInfo = MediaCodec.BufferInfo()
     private val audioInfo = MediaCodec.BufferInfo()
     private var appContext: Context? = null
+
+    /**
+     * ConnectChecker yang tahu generasinya sendiri. Semua callback dari
+     * library RootEncoder masuk sini dulu, lalu cuma diteruskan ke logika
+     * asli (handleXxx di bawah) KALAU generasi ini masih yang aktif. Kalau
+     * client ini sudah "pensiun" (ada client generasi baru), callback-nya
+     * dibuang -- tidak ikut menambah consecutiveFailures atau memicu
+     * reconnect baru.
+     */
+    private inner class GenChecker(private val generation: Int) : ConnectChecker {
+        private fun isStale(): Boolean = generation != currentGeneration
+
+        override fun onConnectionSuccess() {
+            if (isStale()) { logStale("onConnectionSuccess"); return }
+            handleConnectionSuccess()
+        }
+
+        override fun onConnectionFailed(reason: String) {
+            if (isStale()) { logStale("onConnectionFailed: $reason"); return }
+            handleConnectionFailed(reason)
+        }
+
+        override fun onConnectionStarted(url: String) {}
+
+        override fun onNewBitrate(bitrate: Long) {}
+
+        override fun onDisconnect() {
+            if (isStale()) { logStale("onDisconnect"); return }
+            handleDisconnect()
+        }
+
+        override fun onAuthError() {
+            if (isStale()) { logStale("onAuthError"); return }
+            handleConnectionFailed("Auth Error")
+        }
+
+        override fun onAuthSuccess() {}
+
+        private fun logStale(what: String) {
+            Log.d(TAG, "Abaikan callback $what dari RtmpClient generasi lama ($generation, aktif sekarang: $currentGeneration)")
+        }
+    }
 
     fun configure(config: Config) {
         this.config = config
@@ -155,12 +191,16 @@ class RtmpPusher : ConnectChecker {
     }
 
     /**
-     * Bikin instance RtmpClient baru dan pasang ulang konfigurasi + SPS/PPS
-     * (kalau sudah pernah ada). HARUS selalu dipanggil dari dalam
-     * synchronized(clientLock) -- tidak melakukan locking sendiri.
+     * Bikin instance RtmpClient baru + naikkan generasi, lalu pasang ulang
+     * konfigurasi + SPS/PPS (kalau sudah pernah ada). HARUS selalu dipanggil
+     * dari dalam synchronized(clientLock).
      */
     private fun createFreshClientLocked() {
-        rtmpClient = RtmpClient(this)
+        currentGeneration++
+        val gen = currentGeneration
+        Log.d(TAG, "Membuat RtmpClient generasi baru: $gen")
+
+        rtmpClient = RtmpClient(GenChecker(gen))
         rtmpClient.setVideoCodec(VideoCodec.H264)
         rtmpClient.setAudioCodec(AudioCodec.AAC)
         rtmpClient.setVideoResolution(config.width, config.height)
@@ -179,6 +219,9 @@ class RtmpPusher : ConnectChecker {
             isPushing = false
             isConnecting = false
             isMetadataReady = false
+            // Naikkan generasi supaya callback yang mungkin masih nyangkut
+            // dari proses disconnect di bawah ini otomatis diabaikan.
+            currentGeneration++
             try {
                 if (rtmpClient.isStreaming) {
                     rtmpClient.disconnect()
@@ -194,9 +237,6 @@ class RtmpPusher : ConnectChecker {
     fun onVideoData(buffer: ByteBuffer, offset: Int, size: Int, timestampUs: Long, isKeyFrame: Boolean) {
         if (!isPushing) return
 
-        // Diisi DI DALAM lock, dipakai DI LUAR lock -- supaya connect() (yang
-        // blocking, handshake TCP/RTMP) tidak menahan lock lama-lama dan tidak
-        // memblokir thread video/audio lain yang butuh clientLock juga.
         var clientToConnect: RtmpClient? = null
         var sendException: Throwable? = null
 
@@ -237,18 +277,10 @@ class RtmpPusher : ConnectChecker {
 
         sendException?.let { e ->
             Log.e(TAG, "sendVideo gagal (kemungkinan Broken pipe): ${e.message}")
-            // Jangan tunggu callback onDisconnect/onConnectionFailed dari library
-            // yang bisa saja telat -- begitu tulis ke socket gagal, langsung
-            // anggap koneksi putus dan picu reconnect dari sini juga.
-            onConnectionFailed("Send error: ${e.message}")
+            handleConnectionFailed("Send error: ${e.message}")
         }
     }
 
-    /**
-     * Audio mentah (raw AAC, tanpa ADTS) dari capture card, diteruskan
-     * langsung ke RtmpClient tanpa lewat encoder tambahan -- capture card
-     * (via library AUSBC) sudah meng-encode ke AAC duluan.
-     */
     fun onDeviceAudioData(buffer: ByteBuffer, size: Int, timestampUs: Long) {
         if (!isPushing) return
 
@@ -265,7 +297,7 @@ class RtmpPusher : ConnectChecker {
 
         sendException?.let { e ->
             Log.e(TAG, "sendAudio gagal (kemungkinan Broken pipe): ${e.message}")
-            onConnectionFailed("Send error: ${e.message}")
+            handleConnectionFailed("Send error: ${e.message}")
         }
     }
 
@@ -273,8 +305,6 @@ class RtmpPusher : ConnectChecker {
         if (!isPushing) return
         Log.i(TAG, "SPS/PPS received")
 
-        // Simpan salinan independen untuk dipakai ulang saat reconnect
-        // (buffer asli dari fragment akan dipakai ulang/ditimpa nanti).
         val spsCopy = ByteBuffer.allocateDirect(sps.remaining())
         spsCopy.put(sps.duplicate())
         spsCopy.flip()
@@ -301,19 +331,12 @@ class RtmpPusher : ConnectChecker {
 
     /**
      * Bersihkan client yang bermasalah dan siapkan yang baru untuk reconnect.
+     * disconnect() lama + pembuatan client baru (yang menaikkan generasi)
+     * dilakukan di dalam synchronized(clientLock) yang SAMA dengan yang
+     * dipakai onVideoData()/onDeviceAudioData() -- lihat FIX #1.
      *
-     * PENTING (fix race condition): disconnect() lama + pembuatan client baru
-     * sekarang dilakukan DI DALAM synchronized(clientLock) yang SAMA dengan
-     * yang dipakai onVideoData()/onDeviceAudioData(). Ini memastikan thread
-     * video/audio tidak akan pernah menulis ke objek RtmpClient yang sedang
-     * di tengah proses disconnect/penggantian -- kalaupun mereka datang
-     * bersamaan, mereka akan menunggu sebentar (blocked di lock) sampai
-     * proses reconnect ini selesai, baru lanjut dengan client yang baru.
-     *
-     * Tetap dijalankan di Thread terpisah (bukan langsung di thread callback
-     * onConnectionFailed/onDisconnect milik library) supaya kalau disconnect()
-     * ternyata butuh waktu, thread callback internal library tidak ikut
-     * terblokir/berpotensi deadlock.
+     * Tetap dijalankan di Thread terpisah supaya kalau disconnect() ternyata
+     * butuh waktu, thread callback internal library tidak ikut terblokir.
      */
     private fun resetClientForReconnect() {
         isConnecting = true
@@ -353,8 +376,9 @@ class RtmpPusher : ConnectChecker {
         }
     }
 
-    // --- ConnectChecker Implementation ---
-    override fun onConnectionSuccess() {
+    // --- Logika asli, sekarang dipanggil lewat GenChecker (bukan implements ConnectChecker langsung) ---
+
+    private fun handleConnectionSuccess() {
         Log.i(TAG, "RTMP Success")
         synchronized(clientLock) {
             isConnecting = false
@@ -364,7 +388,7 @@ class RtmpPusher : ConnectChecker {
         markConnected(true)
     }
 
-    override fun onConnectionFailed(reason: String) {
+    private fun handleConnectionFailed(reason: String) {
         val cleanReason = reason.ifBlank { "Timeout/Handshake Failure" }
         consecutiveFailures++
         Log.e(TAG, "RTMP Failed ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES): $cleanReason")
@@ -373,8 +397,6 @@ class RtmpPusher : ConnectChecker {
             giveUpAfterTooManyFailures()
             return
         }
-        // TIDAK set isPushing = false di sini -- biar pipeline tetap hidup
-        // dan auto-reconnect (via resetClientForReconnect) yang bekerja.
         resetClientForReconnect()
         if (!hasShownFailureToast) {
             hasShownFailureToast = true
@@ -386,11 +408,7 @@ class RtmpPusher : ConnectChecker {
         }
     }
 
-    override fun onConnectionStarted(url: String) {}
-
-    override fun onNewBitrate(bitrate: Long) {}
-
-    override fun onDisconnect() {
+    private fun handleDisconnect() {
         consecutiveFailures++
         Log.i(TAG, "RTMP Disconnected ($consecutiveFailures/$MAX_CONSECUTIVE_FAILURES) -- akan coba reconnect otomatis jika masih live")
         markConnected(false)
@@ -400,10 +418,4 @@ class RtmpPusher : ConnectChecker {
         }
         resetClientForReconnect()
     }
-
-    override fun onAuthError() {
-        onConnectionFailed("Auth Error")
-    }
-
-    override fun onAuthSuccess() {}
 }
