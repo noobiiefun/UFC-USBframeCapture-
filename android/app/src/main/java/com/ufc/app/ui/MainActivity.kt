@@ -124,6 +124,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // Tombol untuk masuk ke Preview Mode (Fullscreen tanpa gangguan)
+        val previewButton = findViewById<Button>(R.id.btnPreview)
+        previewButton.setOnClickListener {
+            val intent = Intent(this, com.ufc.app.ui.PreviewActivity::class.java)
+            intent.putExtra("PREVIEW_ONLY", true) // Default: preview saja
+            startActivity(intent)
+        }
+
         startStreamButton.setOnClickListener {
             val status = checkPermissionsDetail()
             if (!status.allGranted) {
