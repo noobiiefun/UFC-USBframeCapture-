@@ -42,6 +42,8 @@ dependencies {
 
     // Pustaka AndroidUSBCamera (AUSBC) - Fork ernestp stabil untuk Android 16+
     implementation("com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0")
+    implementation("com.github.ernestp.AndroidUSBCamera:libuvc:3.6.0")
+    implementation("com.github.ernestp.AndroidUSBCamera:libnative:3.6.0")
 
     // HTTP server ringan untuk endpoint /status
     implementation("org.nanohttpd:nanohttpd:2.3.1")

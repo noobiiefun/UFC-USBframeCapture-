@@ -1,6 +1,7 @@
 package com.ufc.app.ui
 
 import android.annotation.SuppressLint
+import android.hardware.usb.UsbDevice
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioManager
@@ -19,10 +20,14 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
+import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
+import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
+import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
+import com.jiangdg.usb.USBMonitor
 import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.model.StreamConfig
@@ -47,7 +52,8 @@ class PreviewActivity : AppCompatActivity() {
 
     private lateinit var config: StreamConfig
     private var previewView: AspectRatioTextureView? = null
-    private var cameraClient: com.jiangdg.ausbc.MultiCameraClient.ICamera? = null
+    private var multiCameraClient: MultiCameraClient? = null
+    private var cameraClient: MultiCameraClient.ICamera? = null
     private var rtmpPusher: RtmpPusher? = null
     private var isStreaming = false
     private var isPreviewOnly = true // Mode default: preview saja, tidak stream
@@ -89,7 +95,7 @@ class PreviewActivity : AppCompatActivity() {
         val controlsView = findViewById<View>(R.id.controlsOverlay)
         
         previewView?.setOnTouchListener { view, event ->
-            if (event.action == MotionEvent.ACTION_SINGLE_TAP_UP) {
+            if (event.action == MotionEvent.ACTION_UP) {
                 controlsVisible = !controlsVisible
                 controlsView.visibility = if (controlsVisible) View.VISIBLE else View.GONE
                 if (!controlsVisible) {
@@ -177,45 +183,69 @@ class PreviewActivity : AppCompatActivity() {
             .setAspectRatioShow(false) // Tidak perlu aspect ratio indicator di preview mode
             .create()
         
-        cameraClient = com.jiangdg.ausbc.MultiCameraClient.create(this, cameraRequest)
-        
-        cameraClient?.setCameraStateCallback(object : ICameraStateCallBack {
-            override fun onCameraState(self: com.jiangdg.ausbc.MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
-                when (code) {
-                    ICameraStateCallBack.State.OPENED -> {
-                        Log.i(TAG, "Camera opened - starting preview & audio passthrough")
-                        StatusRepository.update { it.copy(connected = true) }
-                        
-                        // Setup encoder callback untuk streaming (jika bukan preview only)
-                        if (!isPreviewOnly) {
-                            setupStreamingEncoder()
-                        } else {
-                            // Preview only mode - setup audio passthrough callback
-                            setupAudioPassthroughCallback()
+        multiCameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
+            override fun onAttachDev(device: UsbDevice?) {
+                multiCameraClient?.requestPermission(device)
+            }
+
+            override fun onDetachDec(device: UsbDevice?) {
+                cameraClient?.closeCamera()
+                cameraClient = null
+            }
+
+            override fun onConnectDev(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
+                val camera = CameraUVC(this@PreviewActivity, device!!)
+                camera.setUsbControlBlock(ctrlBlock)
+                cameraClient = camera
+                
+                cameraClient?.setCameraStateCallBack(object : ICameraStateCallBack {
+                    override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
+                        when (code) {
+                            ICameraStateCallBack.State.OPENED -> {
+                                Log.i(TAG, "Camera opened - starting preview & audio passthrough")
+                                StatusRepository.update { it.copy(connected = true) }
+                                
+                                // Setup encoder callback untuk streaming (jika bukan preview only)
+                                if (!isPreviewOnly) {
+                                    setupStreamingEncoder()
+                                } else {
+                                    // Preview only mode - setup audio passthrough callback
+                                    setupAudioPassthroughCallback()
+                                }
+                                
+                                // Mulai audio passthrough dari HDMI
+                                startAudioPassthrough()
+                                
+                                // Mulai preview
+                                cameraClient?.captureStreamStart()
+                            }
+                            ICameraStateCallBack.State.CLOSED -> {
+                                Log.i(TAG, "Camera closed")
+                                StatusRepository.update { it.copy(connected = false) }
+                                stopAudioPassthrough()
+                            }
+                            ICameraStateCallBack.State.ERROR -> {
+                                Log.e(TAG, "Camera error: $msg")
+                                StatusRepository.update { it.copy(connected = false) }
+                                Toast.makeText(this@PreviewActivity, "Camera Error: $msg", Toast.LENGTH_LONG).show()
+                            }
+                            else -> {}
                         }
-                        
-                        // Mulai audio passthrough dari HDMI
-                        startAudioPassthrough()
-                        
-                        // Mulai preview
-                        cameraClient?.captureStreamStart()
                     }
-                    ICameraStateCallBack.State.CLOSED -> {
-                        Log.i(TAG, "Camera closed")
-                        StatusRepository.update { it.copy(connected = false) }
-                        stopAudioPassthrough()
-                    }
-                    ICameraStateCallBack.State.ERROR -> {
-                        Log.e(TAG, "Camera error: $msg")
-                        StatusRepository.update { it.copy(connected = false) }
-                        Toast.makeText(this@PreviewActivity, "Camera Error: $msg", Toast.LENGTH_LONG).show()
-                    }
-                    else -> {}
-                }
+                })
+                
+                cameraClient?.openCamera(previewView, cameraRequest)
+            }
+
+            override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
+                cameraClient?.closeCamera()
+            }
+
+            override fun onCancelDev(device: UsbDevice?) {
             }
         })
         
-        cameraClient?.registerCamera()
+        multiCameraClient?.register()
     }
     
     private fun setupStreamingEncoder() {
@@ -254,7 +284,7 @@ class PreviewActivity : AppCompatActivity() {
         )
         
         // Setup callback untuk encode data - video saja untuk streaming
-        cameraClient?.setEncodeDataCallback(object : IEncodeDataCallBack {
+        cameraClient?.setEncodeDataCallBack(object : IEncodeDataCallBack {
             override fun onEncodeData(
                 type: IEncodeDataCallBack.DataType,
                 buffer: ByteBuffer,
@@ -280,7 +310,7 @@ class PreviewActivity : AppCompatActivity() {
     
     private fun setupAudioPassthroughCallback() {
         // Setup callback khusus untuk audio passthrough di preview only mode
-        cameraClient?.setEncodeDataCallback(object : IEncodeDataCallBack {
+        cameraClient?.setEncodeDataCallBack(object : IEncodeDataCallBack {
             override fun onEncodeData(
                 type: IEncodeDataCallBack.DataType,
                 buffer: ByteBuffer,
@@ -407,7 +437,9 @@ class PreviewActivity : AppCompatActivity() {
         }
         
         cameraClient?.captureStreamStop()
-        cameraClient?.unRegisterCamera()
+        multiCameraClient?.unRegister()
+        multiCameraClient?.destroy()
+        multiCameraClient = null
         cameraClient = null
         
         StatusRepository.update { it.copy(connected = false) }
