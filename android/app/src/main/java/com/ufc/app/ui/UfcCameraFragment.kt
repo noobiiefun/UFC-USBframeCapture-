@@ -45,6 +45,18 @@ class UfcCameraFragment : CameraFragment() {
 
     override fun getCameraViewContainer(): ViewGroup? = container
 
+    override fun onStart() {
+        super.onStart()
+        if (previewView?.isAvailable == true) {
+            registerMultiCamera()
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        unRegisterMultiCamera()
+    }
+
     override fun getCameraRequest(): CameraRequest {
         val config = StreamConfig(requireContext())
         var width = config.resolutionWidth
