@@ -31,21 +31,20 @@ import com.jiangdg.usb.USBMonitor
 import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.model.StreamConfig
-import com.ufc.app.stream.RtmpPusher
 import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 
 /**
- * Activity khusus untuk Preview Mode - layar penuh tanpa UI yang mengganggu.
- * Mendukung 2 mode:
- * 1. Preview Only: Hanya menampilkan video + audio dari capture card (untuk OBS/direct display)
- * 2. Preview + Stream: Preview sambil mengirim ke YouTube
+ * Activity khusus untuk Preview Mode - berfungsi sebagai monitor/layar tambahan.
+ * Menampilkan video & audio langsung dari capture card tanpa encoding/streaming.
+ * Modul terpisah: saat preview aktif, fungsi lain off (kecuali hide notifikasi).
  */
 class PreviewActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PreviewActivity"
-        private const val AUDIO_SAMPLE_RATE = 48000 // Capture card biasanya 48kHz
+        // Audio passthrough - capture card biasanya mengirim PCM 48kHz stereo
+        private const val AUDIO_SAMPLE_RATE = 48000
         private const val AUDIO_CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
     }
@@ -54,11 +53,8 @@ class PreviewActivity : AppCompatActivity() {
     private var previewView: AspectRatioTextureView? = null
     private var multiCameraClient: MultiCameraClient? = null
     private var cameraClient: MultiCameraClient.ICamera? = null
-    private var rtmpPusher: RtmpPusher? = null
-    private var isStreaming = false
-    private var isPreviewOnly = true // Mode default: preview saja, tidak stream
     
-    // Audio passthrough dari HDMI
+    // Audio passthrough dari HDMI capture card
     private var audioTrack: AudioTrack? = null
     private var audioBufferSize: Int = 0
     private var isAudioPlaying = false
@@ -79,18 +75,16 @@ class PreviewActivity : AppCompatActivity() {
         
         config = StreamConfig(this)
         
-        // Cek mode dari intent
-        isPreviewOnly = intent.getBooleanExtra("PREVIEW_ONLY", true)
+        // PreviewActivity hanya untuk preview-only mode (tidak ada streaming)
         
         setContentView(R.layout.activity_preview)
         
         previewView = findViewById(R.id.previewTextureView)
         
-        val btnToggleMode = findViewById<Button>(R.id.btnToggleMode)
         val btnStop = findViewById<Button>(R.id.btnStopPreview)
         val textStatus = findViewById<TextView>(R.id.textPreviewStatus)
         
-        // Setup tombol toggle mode (tap sekali untuk show/hide controls)
+        // Setup tombol toggle controls (tap sekali untuk show/hide controls)
         var controlsVisible = true
         val controlsView = findViewById<View>(R.id.controlsOverlay)
         
@@ -105,19 +99,6 @@ class PreviewActivity : AppCompatActivity() {
             true
         }
         
-        btnToggleMode.text = if (isPreviewOnly) "MODE: PREVIEW SAJA" else "MODE: PREVIEW + STREAM"
-        btnToggleMode.setOnClickListener {
-            isPreviewOnly = !isPreviewOnly
-            btnToggleMode.text = if (isPreviewOnly) "MODE: PREVIEW SAJA" else "MODE: PREVIEW + STREAM"
-            
-            if (isStreaming) {
-                // Restart dengan mode baru
-                stopPreview()
-                startPreview()
-            }
-            Toast.makeText(this, "Mode diubah: ${if (isPreviewOnly) "Preview Saja" else "Preview + Stream"}", Toast.LENGTH_SHORT).show()
-        }
-        
         btnStop.setOnClickListener {
             stopPreview()
             finish()
@@ -126,8 +107,8 @@ class PreviewActivity : AppCompatActivity() {
         lifecycleScope.launch {
             StatusRepository.status.collect { status ->
                 textStatus.text = buildString {
+                    append("PREVIEW MODE\n")
                     append("UVC: ${if (status.connected) "ON" else "OFF"} | ")
-                    append("YT: ${if (status.youtubeConnected) "LIVE" else "OFF"}\n")
                     append("${status.resolution} @ ${status.fps}fps")
                 }
             }
@@ -205,13 +186,8 @@ class PreviewActivity : AppCompatActivity() {
                                 Log.i(TAG, "Camera opened - starting preview & audio passthrough")
                                 StatusRepository.update { it.copy(connected = true) }
                                 
-                                // Setup encoder callback untuk streaming (jika bukan preview only)
-                                if (!isPreviewOnly) {
-                                    setupStreamingEncoder()
-                                } else {
-                                    // Preview only mode - setup audio passthrough callback
-                                    setupAudioPassthroughCallback()
-                                }
+                                // Preview only mode - setup audio passthrough callback
+                                setupAudioPassthroughCallback()
                                 
                                 // Mulai audio passthrough dari HDMI
                                 startAudioPassthrough()
@@ -248,66 +224,6 @@ class PreviewActivity : AppCompatActivity() {
         multiCameraClient?.register()
     }
     
-    private fun setupStreamingEncoder() {
-        rtmpPusher = RtmpPusher()
-        
-        val streamUrl = config.fullUrl
-        if (streamUrl.length < 10) {
-            Log.w(TAG, "RTMP URL tidak valid, streaming tidak akan dimulai")
-            return
-        }
-        
-        var finalWidth = config.resolutionWidth
-        var finalHeight = config.resolutionHeight
-        if (config.isPortrait) {
-            if (finalWidth > finalHeight) {
-                val temp = finalWidth
-                finalWidth = finalHeight
-                finalHeight = temp
-            }
-        } else {
-            if (finalHeight > finalWidth) {
-                val temp = finalWidth
-                finalWidth = finalHeight
-                finalHeight = temp
-            }
-        }
-        
-        rtmpPusher?.configure(
-            RtmpPusher.Config(
-                width = finalWidth,
-                height = finalHeight,
-                fps = config.fps,
-                videoBitrateKbps = config.bitrateKbps,
-                rtmpUrl = streamUrl
-            )
-        )
-        
-        // Setup callback untuk encode data - video saja untuk streaming
-        cameraClient?.setEncodeDataCallBack(object : IEncodeDataCallBack {
-            override fun onEncodeData(
-                type: IEncodeDataCallBack.DataType,
-                buffer: ByteBuffer,
-                offset: Int,
-                size: Int,
-                timestamp: Long
-            ) {
-                if (type == IEncodeDataCallBack.DataType.H264_SPS) {
-                    extractSpsPps(buffer, offset, size)
-                } else if (rtmpPusher != null && isStreaming) {
-                    val isKeyFrame = type == IEncodeDataCallBack.DataType.H264_KEY
-                    rtmpPusher?.onVideoData(buffer, offset, size, timestamp * 1000, isKeyFrame)
-                }
-                // Audio dari USB tidak dipakai untuk streaming (pakai mic HP via RtmpPusher)
-            }
-        })
-        
-        // Mulai streaming
-        rtmpPusher?.start(this)
-        isStreaming = true
-        Log.i(TAG, "Streaming started in Preview+Stream mode")
-    }
-    
     private fun setupAudioPassthroughCallback() {
         // Setup callback khusus untuk audio passthrough di preview only mode
         cameraClient?.setEncodeDataCallBack(object : IEncodeDataCallBack {
@@ -327,26 +243,8 @@ class PreviewActivity : AppCompatActivity() {
     }
     
     private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
-        val data = ByteArray(size)
-        val originalPos = buffer.position()
-        buffer.position(offset)
-        buffer.get(data)
-        buffer.position(originalPos)
-        
-        var ppsIndex = -1
-        for (i in 4 until size - 4) {
-            if (data[i] == 0.toByte() && data[i+1] == 0.toByte() && 
-                data[i+2] == 0.toByte() && data[i+3] == 1.toByte()) {
-                ppsIndex = i
-                break
-            }
-        }
-        
-        if (ppsIndex != -1) {
-            val sps = ByteBuffer.wrap(data, 4, ppsIndex - 4)
-            val pps = ByteBuffer.wrap(data, ppsIndex + 4, size - ppsIndex - 4)
-            rtmpPusher?.setVideoMetadata(sps, pps)
-        }
+        // Fungsi ini tidak dipakai di preview-only mode
+        // Dibiarkan untuk kompatibilitas kode
     }
     
     private fun startAudioPassthrough() {
@@ -429,12 +327,6 @@ class PreviewActivity : AppCompatActivity() {
         Log.i(TAG, "Stopping preview...")
         
         stopAudioPassthrough()
-        
-        if (isStreaming) {
-            rtmpPusher?.stop()
-            rtmpPusher = null
-            isStreaming = false
-        }
         
         cameraClient?.captureStreamStop()
         multiCameraClient?.unRegister()
