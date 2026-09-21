@@ -23,6 +23,7 @@ import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.camera.bean.CameraRequest
+import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.usb.USBMonitor
 import com.ufc.app.R
@@ -51,7 +52,17 @@ class PreviewActivity : AppCompatActivity() {
     private var controlsView: View? = null
     private var textStatus: TextView? = null
     private var btnDetectUsb: Button? = null
+    private var btnRotate: Button? = null
     private var btnStop: Button? = null
+    
+    // Rotation state
+    private var currentRotationIndex = 0
+    private val rotationAngles = listOf(
+        RotateType.ANGLE_0,
+        RotateType.ANGLE_90,
+        RotateType.ANGLE_180,
+        RotateType.ANGLE_270
+    )
     
     // Auto-hide handler
     private val autoHideHandler = Handler(Looper.getMainLooper())
@@ -81,6 +92,7 @@ class PreviewActivity : AppCompatActivity() {
         controlsView = findViewById(R.id.controlsOverlay)
         textStatus = findViewById(R.id.textPreviewStatus)
         btnDetectUsb = findViewById(R.id.btnDetectUsb)
+        btnRotate = findViewById(R.id.btnRotate)
         btnStop = findViewById(R.id.btnStopPreview)
         
         // Setup tombol detect USB - untuk mendeteksi dan memulai preview
@@ -92,6 +104,11 @@ class PreviewActivity : AppCompatActivity() {
                 stopPreview()
                 startPreview()
             }
+        }
+        
+        // Setup tombol rotasi - untuk mengubah orientasi tampilan
+        btnRotate?.setOnClickListener {
+            rotatePreview()
         }
         
         // Setup tombol keluar
@@ -188,7 +205,7 @@ class PreviewActivity : AppCompatActivity() {
             .setPreviewWidth(width)
             .setPreviewHeight(height)
             .setRenderMode(CameraRequest.RenderMode.NORMAL)
-            .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
+            .setDefaultRotateType(rotationAngles[currentRotationIndex])
             .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC) // Audio dari capture card
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(false) // Tidak perlu aspect ratio indicator di preview mode
@@ -257,6 +274,19 @@ class PreviewActivity : AppCompatActivity() {
         cameraClient = null
         
         StatusRepository.update { it.copy(connected = false) }
+    }
+    
+    private fun rotatePreview() {
+        // Increment rotation index (0 -> 1 -> 2 -> 3 -> 0)
+        currentRotationIndex = (currentRotationIndex + 1) % rotationAngles.size
+        
+        Log.i(TAG, "Rotating preview to angle index: $currentRotationIndex")
+        
+        // Restart preview dengan rotasi baru
+        if (multiCameraClient != null) {
+            stopPreview()
+            startPreview()
+        }
     }
     
     override fun onResume() {

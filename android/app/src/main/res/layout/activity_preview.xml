@@ -71,6 +71,18 @@
                 android:backgroundTint="#2196F3" />
 
             <Button
+                android:id="@+id/btnRotate"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_marginEnd="8dp"
+                android:text="🔄"
+                android:textSize="16sp"
+                android:padding="12dp"
+                android:minWidth="60dp"
+                android:backgroundTint="#FF9800" />
+
+            <Button
                 android:id="@+id/btnStopPreview"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
