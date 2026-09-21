@@ -62,19 +62,26 @@ class UfcCameraFragment : CameraFragment() {
         var width = config.resolutionWidth
         var height = config.resolutionHeight
         
-        if (config.isPortrait) {
-            if (width > height) {
-                val temp = width
-                width = height
-                height = temp
+        // Pastikan resolusi minimal 720p untuk landscape
+        if (!config.isPortrait) {
+            // Landscape mode: width harus >= 1280, height >= 720
+            if (width < 1280 || height < 720) {
+                width = 1280
+                height = 720
             }
         } else {
-            if (height > width) {
-                val temp = width
-                width = height
-                height = temp
+            // Portrait mode: height harus >= 1280, width >= 720
+            if (width < 720 || height < 1280) {
+                width = 720
+                height = 1280
             }
         }
+        
+        // Simpan konfigurasi yang sudah disesuaikan
+        config.resolutionWidth = width
+        config.resolutionHeight = height
+
+        Log.i("UfcCamera", "Requesting camera resolution: ${width}x${height}, portrait=${config.isPortrait}")
 
         return CameraRequest.Builder()
             .setPreviewWidth(width)

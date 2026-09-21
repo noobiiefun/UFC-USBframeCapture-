@@ -206,19 +206,26 @@ class PreviewActivity : AppCompatActivity() {
         var width = config.resolutionWidth
         var height = config.resolutionHeight
         
-        if (config.isPortrait) {
-            if (width > height) {
-                val temp = width
-                width = height
-                height = temp
+        // Pastikan resolusi minimal 720p untuk landscape
+        if (!config.isPortrait) {
+            // Landscape mode: width harus >= 1280, height >= 720
+            if (width < 1280 || height < 720) {
+                width = 1280
+                height = 720
             }
         } else {
-            if (height > width) {
-                val temp = width
-                width = height
-                height = temp
+            // Portrait mode: height harus >= 1280, width >= 720
+            if (width < 720 || height < 1280) {
+                width = 720
+                height = 1280
             }
         }
+        
+        // Simpan konfigurasi yang sudah disesuaikan
+        config.resolutionWidth = width
+        config.resolutionHeight = height
+        
+        Log.i(TAG, "Initializing camera with resolution: ${width}x${height}, rotation: ${rotationAngles[currentRotationIndex]}")
         
         val cameraRequest = CameraRequest.Builder()
             .setPreviewWidth(width)
@@ -460,10 +467,28 @@ class PreviewActivity : AppCompatActivity() {
         
         Log.i(TAG, "Rotating preview to angle index: $currentRotationIndex")
         
-        // Restart preview dengan rotasi baru
+        // Restart preview dengan rotasi baru - HARUS stop dulu sepenuhnya
         if (multiCameraClient != null) {
-            stopPreview()
-            startPreview()
+            // Stop audio terlebih dahulu
+            stopAudioPassthrough()
+            
+            // Stop capture stream
+            cameraClient?.captureStreamStop()
+            
+            // Close camera untuk reset sepenuhnya
+            cameraClient?.closeCamera()
+            cameraClient = null
+            
+            // Destroy multiCameraClient
+            multiCameraClient?.unRegister()
+            multiCameraClient?.destroy()
+            multiCameraClient = null
+            
+            // Delay singkat untuk memastikan camera benar-benar tertutup
+            Handler(Looper.getMainLooper()).postDelayed({
+                Log.i(TAG, "Re-initializing camera with new rotation...")
+                startPreview()
+            }, 300)
         }
     }
     
