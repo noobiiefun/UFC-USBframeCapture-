@@ -332,7 +332,7 @@ class PreviewActivity : AppCompatActivity() {
             val audioFormat = AudioFormat.Builder()
                 .setEncoding(AUDIO_FORMAT)
                 .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                .setChannelMask(CHANNEL_CONFIG)
                 .build()
             
             audioRecord = AudioRecord(
