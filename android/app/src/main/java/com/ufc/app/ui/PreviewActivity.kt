@@ -2,11 +2,6 @@ package com.ufc.app.ui
 
 import android.annotation.SuppressLint
 import android.hardware.usb.UsbDevice
-import android.media.AudioAttributes
-import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioTrack
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -25,7 +20,6 @@ import androidx.lifecycle.lifecycleScope
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
-import com.jiangdg.ausbc.callback.IRawAudioDataCallBack
 import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
@@ -34,7 +28,6 @@ import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.model.StreamConfig
 import kotlinx.coroutines.launch
-import java.nio.ByteBuffer
 
 /**
  * Activity khusus untuk Preview Mode - berfungsi sebagai monitor/layar tambahan.
@@ -45,10 +38,6 @@ class PreviewActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "PreviewActivity"
-        // Audio passthrough - capture card biasanya mengirim PCM 48kHz stereo
-        private const val AUDIO_SAMPLE_RATE = 48000
-        private const val AUDIO_CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val AUTO_HIDE_DELAY_MS = 3000L
     }
 
@@ -56,11 +45,6 @@ class PreviewActivity : AppCompatActivity() {
     private var previewView: AspectRatioTextureView? = null
     private var multiCameraClient: MultiCameraClient? = null
     private var cameraClient: MultiCameraClient.ICamera? = null
-    
-    // Audio passthrough dari HDMI capture card
-    private var audioTrack: AudioTrack? = null
-    private var audioBufferSize: Int = 0
-    private var isAudioPlaying = false
     
     // UI Components
     private var controlsView: View? = null
@@ -228,14 +212,8 @@ class PreviewActivity : AppCompatActivity() {
                     override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
                         when (code) {
                             ICameraStateCallBack.State.OPENED -> {
-                                Log.i(TAG, "Camera opened - starting preview & audio passthrough")
+                                Log.i(TAG, "Camera opened - starting preview")
                                 StatusRepository.update { it.copy(connected = true) }
-                                
-                                // Preview only mode - setup audio passthrough callback
-                                setupAudioPassthroughCallback()
-                                
-                                // Mulai audio passthrough dari HDMI
-                                startAudioPassthrough()
                                 
                                 // Mulai preview
                                 cameraClient?.captureStreamStart()
@@ -243,7 +221,6 @@ class PreviewActivity : AppCompatActivity() {
                             ICameraStateCallBack.State.CLOSED -> {
                                 Log.i(TAG, "Camera closed")
                                 StatusRepository.update { it.copy(connected = false) }
-                                stopAudioPassthrough()
                             }
                             ICameraStateCallBack.State.ERROR -> {
                                 Log.e(TAG, "Camera error: $msg")
@@ -269,108 +246,13 @@ class PreviewActivity : AppCompatActivity() {
         multiCameraClient?.register()
     }
     
-    private fun setupAudioPassthroughCallback() {
-        // Setup callback khusus untuk audio passthrough di preview only mode
-        // Menggunakan IRawAudioDataCallBack untuk raw PCM audio dari capture card
-        cameraClient?.setRawAudioDataCallBack(object : IRawAudioDataCallBack {
-            override fun onRawAudioData(
-                buffer: ByteBuffer,
-                size: Int,
-                timestamp: Long
-            ) {
-                if (isAudioPlaying) {
-                    playAudioData(buffer, 0, size)
-                }
-            }
-        })
-        Log.i(TAG, "Raw audio passthrough callback setup for preview-only mode")
-    }
-    
     private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
         // Fungsi ini tidak dipakai di preview-only mode
         // Dibiarkan untuk kompatibilitas kode
     }
     
-    private fun startAudioPassthrough() {
-        // Hitung buffer size untuk audio passthrough dengan latency rendah
-        audioBufferSize = AudioTrack.getMinBufferSize(
-            AUDIO_SAMPLE_RATE,
-            AUDIO_CHANNEL_CONFIG,
-            AUDIO_FORMAT
-        )
-        
-        if (audioBufferSize <= 0) {
-            Log.e(TAG, "Invalid audio buffer size")
-            return
-        }
-        
-        // Gunakan AudioTrack dengan latency rendah
-        val audioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_MEDIA)
-            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC) // Musik untuk kualitas lebih baik
-            .build()
-        
-        val audioFormat = AudioFormat.Builder()
-            .setSampleRate(AUDIO_SAMPLE_RATE)
-            .setChannelMask(AUDIO_CHANNEL_CONFIG)
-            .setEncoding(AUDIO_FORMAT)
-            .build()
-        
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-                audioTrack = AudioTrack(
-                    audioAttributes,
-                    audioFormat,
-                    audioBufferSize * 2, // Buffer lebih besar untuk stabilitas
-                    AudioTrack.MODE_STREAM,
-                    AudioManager.AUDIO_SESSION_ID_GENERATE
-                )
-            }
-            
-            audioTrack?.playbackRate = AUDIO_SAMPLE_RATE
-            audioTrack?.play()
-            isAudioPlaying = true
-            
-            Log.i(TAG, "Audio passthrough started: ${AUDIO_SAMPLE_RATE}Hz, stereo, 16-bit, buffer=${audioBufferSize * 2}")
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start audio passthrough: ${e.message}")
-            Toast.makeText(this, "Gagal memulai audio: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
-        }
-    }
-    
-    private fun playAudioData(buffer: ByteBuffer, offset: Int, size: Int) {
-        if (!isAudioPlaying || audioTrack == null) return
-        
-        try {
-            val audioData = ByteArray(size)
-            val originalPos = buffer.position()
-            buffer.position(offset)
-            buffer.get(audioData)
-            buffer.position(originalPos)
-            
-            audioTrack?.write(audioData, 0, size)
-        } catch (e: Exception) {
-            Log.e(TAG, "Error playing audio: ${e.message}")
-        }
-    }
-    
-    private fun stopAudioPassthrough() {
-        try {
-            isAudioPlaying = false
-            audioTrack?.stop()
-            audioTrack?.release()
-            audioTrack = null
-            Log.i(TAG, "Audio passthrough stopped")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping audio: ${e.message}")
-        }
-    }
-    
     private fun stopPreview() {
         Log.i(TAG, "Stopping preview...")
-        
-        stopAudioPassthrough()
         
         cameraClient?.captureStreamStop()
         multiCameraClient?.unRegister()
