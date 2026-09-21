@@ -8,6 +8,8 @@ import android.media.AudioManager
 import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.MotionEvent
 import android.view.View
@@ -23,7 +25,7 @@ import androidx.lifecycle.lifecycleScope
 import com.jiangdg.ausbc.MultiCameraClient
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
-import com.jiangdg.ausbc.callback.IEncodeDataCallBack
+import com.jiangdg.ausbc.callback.IRawAudioDataCallBack
 import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
@@ -47,6 +49,7 @@ class PreviewActivity : AppCompatActivity() {
         private const val AUDIO_SAMPLE_RATE = 48000
         private const val AUDIO_CHANNEL_CONFIG = AudioFormat.CHANNEL_OUT_STEREO
         private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        private const val AUTO_HIDE_DELAY_MS = 3000L
     }
 
     private lateinit var config: StreamConfig
@@ -58,6 +61,18 @@ class PreviewActivity : AppCompatActivity() {
     private var audioTrack: AudioTrack? = null
     private var audioBufferSize: Int = 0
     private var isAudioPlaying = false
+    
+    // UI Components
+    private var controlsView: View? = null
+    private var textStatus: TextView? = null
+    private var btnDetectUsb: Button? = null
+    private var btnStop: Button? = null
+    
+    // Auto-hide handler
+    private val autoHideHandler = Handler(Looper.getMainLooper())
+    private val autoHideRunnable = Runnable {
+        hideControls()
+    }
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -75,45 +90,65 @@ class PreviewActivity : AppCompatActivity() {
         
         config = StreamConfig(this)
         
-        // PreviewActivity hanya untuk preview-only mode (tidak ada streaming)
-        
         setContentView(R.layout.activity_preview)
         
         previewView = findViewById(R.id.previewTextureView)
+        controlsView = findViewById(R.id.controlsOverlay)
+        textStatus = findViewById(R.id.textPreviewStatus)
+        btnDetectUsb = findViewById(R.id.btnDetectUsb)
+        btnStop = findViewById(R.id.btnStopPreview)
         
-        val btnStop = findViewById<Button>(R.id.btnStopPreview)
-        val textStatus = findViewById<TextView>(R.id.textPreviewStatus)
+        // Setup tombol detect USB - untuk mendeteksi dan memulai preview
+        btnDetectUsb?.setOnClickListener {
+            if (multiCameraClient == null) {
+                startPreview()
+            } else {
+                // Re-connect jika sudah terhubung
+                stopPreview()
+                startPreview()
+            }
+        }
         
-        // Setup tombol toggle controls (tap sekali untuk show/hide controls)
+        // Setup tombol keluar
+        btnStop?.setOnClickListener {
+            stopPreview()
+            finish()
+        }
+        
+        // Tap pada preview untuk toggle controls dengan auto-hide
         var controlsVisible = true
-        val controlsView = findViewById<View>(R.id.controlsOverlay)
-        
         previewView?.setOnTouchListener { view, event ->
             if (event.action == MotionEvent.ACTION_UP) {
                 controlsVisible = !controlsVisible
-                controlsView.visibility = if (controlsVisible) View.VISIBLE else View.GONE
-                if (!controlsVisible) {
-                    hideSystemUI()
+                if (controlsVisible) {
+                    showControls()
+                    // Auto-hide setelah 3 detik
+                    autoHideHandler.removeCallbacks(autoHideRunnable)
+                    autoHideHandler.postDelayed(autoHideRunnable, AUTO_HIDE_DELAY_MS)
+                } else {
+                    hideControls()
                 }
             }
             true
         }
         
-        btnStop.setOnClickListener {
-            stopPreview()
-            finish()
-        }
-        
+        // Update status UI
         lifecycleScope.launch {
             StatusRepository.status.collect { status ->
-                textStatus.text = buildString {
+                textStatus?.text = buildString {
                     append("PREVIEW MODE\n")
                     append("UVC: ${if (status.connected) "ON" else "OFF"} | ")
                     append("${status.resolution} @ ${status.fps}fps")
                 }
+                
+                // Auto-start preview jika USB terdeteksi connected
+                if (status.connected && multiCameraClient == null) {
+                    Log.i(TAG, "USB connected detected, starting preview...")
+                }
             }
         }
         
+        // Langsung mulai preview saat activity dibuka
         startPreview()
     }
     
@@ -126,6 +161,16 @@ class PreviewActivity : AppCompatActivity() {
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_FULLSCREEN
         )
+    }
+    
+    private fun showControls() {
+        controlsView?.visibility = View.VISIBLE
+        hideSystemUI()
+    }
+    
+    private fun hideControls() {
+        controlsView?.visibility = View.GONE
+        hideSystemUI()
     }
     
     private fun startPreview() {
@@ -226,20 +271,19 @@ class PreviewActivity : AppCompatActivity() {
     
     private fun setupAudioPassthroughCallback() {
         // Setup callback khusus untuk audio passthrough di preview only mode
-        cameraClient?.setEncodeDataCallBack(object : IEncodeDataCallBack {
-            override fun onEncodeData(
-                type: IEncodeDataCallBack.DataType,
+        // Menggunakan IRawAudioDataCallBack untuk raw PCM audio dari capture card
+        cameraClient?.setRawAudioDataCallBack(object : IRawAudioDataCallBack {
+            override fun onRawAudioData(
                 buffer: ByteBuffer,
-                offset: Int,
                 size: Int,
                 timestamp: Long
             ) {
-                if (type == IEncodeDataCallBack.DataType.AAC && isAudioPlaying) {
-                    playAudioData(buffer, offset, size)
+                if (isAudioPlaying) {
+                    playAudioData(buffer, 0, size)
                 }
             }
         })
-        Log.i(TAG, "Audio passthrough callback setup for preview-only mode")
+        Log.i(TAG, "Raw audio passthrough callback setup for preview-only mode")
     }
     
     private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {

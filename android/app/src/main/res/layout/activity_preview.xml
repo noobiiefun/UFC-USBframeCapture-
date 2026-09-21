@@ -24,7 +24,7 @@
 
     </FrameLayout>
 
-    <!-- Controls Overlay - Bisa di-hide dengan tap -->
+    <!-- Controls Overlay - Bisa di-hide dengan tap atau auto-hide -->
     <FrameLayout
         android:id="@+id/controlsOverlay"
         android:layout_width="0dp"
@@ -60,14 +60,15 @@
             android:background="#80000000">
 
             <Button
-                android:id="@+id/btnToggleMode"
+                android:id="@+id/btnDetectUsb"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginEnd="8dp"
-                android:text="MODE: PREVIEW SAJA"
-                android:textSize="12sp"
-                android:padding="8dp" />
+                android:text="🔍 DETECT USB"
+                android:textSize="14sp"
+                android:padding="12dp"
+                android:backgroundTint="#2196F3" />
 
             <Button
                 android:id="@+id/btnStopPreview"
@@ -76,8 +77,8 @@
                 android:layout_weight="1"
                 android:layout_marginStart="8dp"
                 android:text="KELUAR"
-                android:textSize="12sp"
-                android:padding="8dp"
+                android:textSize="14sp"
+                android:padding="12dp"
                 android:backgroundTint="#D32F2F" />
 
         </LinearLayout>
