@@ -1,7 +1,13 @@
 package com.ufc.app.ui
 
-import android.annotation.SuppressLint
+import android.app.Activity
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbManager
 import android.media.AudioAttributes
 import android.media.AudioFormat
 import android.media.AudioRecord
@@ -11,524 +17,277 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
-import android.widget.TextView
+import android.widget.FrameLayout
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import androidx.lifecycle.lifecycleScope
-import com.jiangdg.ausbc.MultiCameraClient
-import com.jiangdg.ausbc.callback.ICameraStateCallBack
-import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
-import com.jiangdg.ausbc.camera.CameraUVC
-import com.jiangdg.ausbc.camera.bean.CameraRequest
-import com.jiangdg.ausbc.render.env.RotateType
-import com.jiangdg.ausbc.widget.AspectRatioTextureView
-import com.jiangdg.usb.USBMonitor
-import com.ufc.app.R
-import com.ufc.app.StatusRepository
-import com.ufc.app.model.StreamConfig
-import kotlinx.coroutines.*
+import com.jiangdg.ausbc.UVCCameraHelper
+import com.jiangdg.ausbc.widget.SizePickerDialog
+
+import java.nio.ByteBuffer
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
-/**
- * Activity khusus untuk Preview Mode - berfungsi sebagai monitor/layar tambahan.
- * Menampilkan video & audio langsung dari capture card tanpa encoding/streaming.
- * Modul terpisah: saat preview aktif, fungsi lain off (kecuali hide notifikasi).
- */
-class PreviewActivity : AppCompatActivity() {
+class PreviewActivity : Activity(), UVCCameraHelper.OnMyViewConnectListener, UVCCameraHelper.OnMyCameraDataListener {
 
-    companion object {
-        private const val TAG = "PreviewActivity"
-        private const val AUTO_HIDE_DELAY_MS = 3000L
-        
-        // Audio passthrough constants
-        private const val SAMPLE_RATE = 48000
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val BUFFER_SIZE_FACTOR = 4
-    }
-
-    private lateinit var config: StreamConfig
-    private var previewView: AspectRatioTextureView? = null
-    private var multiCameraClient: MultiCameraClient? = null
-    private var cameraClient: MultiCameraClient.ICamera? = null
-    
-    // Audio passthrough
-    private var audioRecord: AudioRecord? = null
-    private var audioTrack: AudioTrack? = null
-    private var audioThread: ExecutorService? = null
-    private var isAudioPlaying = false
-    
-    // UI Components
-    private var controlsView: View? = null
-    private var textStatus: TextView? = null
-    private var btnDetectUsb: Button? = null
+    private var mHelper: UVCCameraHelper? = null
+    private var rootView: View? = null
+    private var btnDetect: Button? = null
     private var btnRotate: Button? = null
-    private var btnStop: Button? = null
+    private var btnExit: Button? = null
+    private var container: FrameLayout? = null
     
-    // Rotation state
-    private var currentRotationIndex = 0
-    private val rotationAngles = listOf(
-        RotateType.ANGLE_0,
-        RotateType.ANGLE_90,
-        RotateType.ANGLE_180,
-        RotateType.ANGLE_270
-    )
-    
-    // Auto-hide handler
-    private val autoHideHandler = Handler(Looper.getMainLooper())
-    private val autoHideRunnable = Runnable {
+    // Audio variables
+    private var audioThread: Thread? = null
+    private var isAudioPlaying = false
+    private val SAMPLE_RATE = 48000
+    private val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
+    private val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val hideControlsRunnable = Runnable {
         hideControls()
     }
 
-    @SuppressLint("ClickableViewAccessibility")
     override fun onCreate(savedInstanceState: Bundle?) {
-        installSplashScreen()
         super.onCreate(savedInstanceState)
         
-        // Fullscreen mode - tidak ada status bar atau navigation bar
-        window.addFlags(
-            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or
+        // Fullscreen & Hide Notifikasi
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
         )
-        
-        // Hide system UI completely
-        hideSystemUI()
-        
-        config = StreamConfig(this)
-        
-        setContentView(R.layout.activity_preview)
-        
-        previewView = findViewById(R.id.previewTextureView)
-        controlsView = findViewById(R.id.controlsOverlay)
-        textStatus = findViewById(R.id.textPreviewStatus)
-        btnDetectUsb = findViewById(R.id.btnDetectUsb)
-        btnRotate = findViewById(R.id.btnRotate)
-        btnStop = findViewById(R.id.btnStopPreview)
-        
-        // Setup tombol detect USB - untuk mendeteksi dan memulai preview
-        btnDetectUsb?.setOnClickListener {
-            if (multiCameraClient == null) {
-                startPreview()
-            } else {
-                // Re-connect jika sudah terhubung
-                stopPreview()
-                startPreview()
-            }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
         }
-        
-        // Setup tombol rotasi - untuk mengubah orientasi tampilan
+        setContentView(R.layout.activity_preview) // Pastikan layout ini ada
+
+        rootView = findViewById(android.R.id.content)
+        container = findViewById(R.id.preview_container) // Pastikan ID ini ada di layout XML
+        btnDetect = findViewById(R.id.btn_detect_usb)
+        btnRotate = findViewById(R.id.btn_rotate)
+        btnExit = findViewById(R.id.btn_exit)
+
+        mHelper = UVCCameraHelper.getInstance()
+        mHelper?.setOnMyViewConnectListener(this)
+        mHelper?.setOnCameraDataListener(this)
+
+        // Setup Click Listeners
+        btnDetect?.setOnClickListener {
+            checkUsbPermissionAndConnect()
+        }
+
         btnRotate?.setOnClickListener {
             rotatePreview()
         }
-        
-        // Setup tombol keluar
-        btnStop?.setOnClickListener {
-            stopPreview()
+
+        btnExit?.setOnClickListener {
+            stopAudio()
+            mHelper?.unregisterUSB()
+            mHelper?.closeCamera()
             finish()
         }
-        
-        // Tap pada preview untuk toggle controls dengan auto-hide
-        var controlsVisible = true
-        previewView?.setOnTouchListener { view, event ->
-            if (event.action == MotionEvent.ACTION_UP) {
-                controlsVisible = !controlsVisible
-                if (controlsVisible) {
-                    showControls()
-                    // Auto-hide setelah 3 detik
-                    autoHideHandler.removeCallbacks(autoHideRunnable)
-                    autoHideHandler.postDelayed(autoHideRunnable, AUTO_HIDE_DELAY_MS)
-                } else {
-                    hideControls()
-                }
-            }
-            true
-        }
-        
-        // Update status UI
-        lifecycleScope.launch {
-            StatusRepository.status.collect { status ->
-                textStatus?.text = buildString {
-                    append("PREVIEW MODE\n")
-                    append("UVC: ${if (status.connected) "ON" else "OFF"} | ")
-                    append("${status.resolution} @ ${status.fps}fps")
-                }
-                
-                // Auto-start preview jika USB terdeteksi connected
-                if (status.connected && multiCameraClient == null) {
-                    Log.i(TAG, "USB connected detected, starting preview...")
-                }
-            }
-        }
-        
-        // Langsung mulai preview saat activity dibuka
-        startPreview()
-    }
-    
-    private fun hideSystemUI() {
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-            or View.SYSTEM_UI_FLAG_FULLSCREEN
-        )
-    }
-    
-    private fun showControls() {
-        controlsView?.visibility = View.VISIBLE
-        hideSystemUI()
-    }
-    
-    private fun hideControls() {
-        controlsView?.visibility = View.GONE
-        hideSystemUI()
-    }
-    
-    private fun startPreview() {
-        if (checkPermissions()) {
-            initCamera()
-        } else {
-            requestPermissions()
+
+        // Tap to toggle controls
+        rootView?.setOnClickListener {
+            toggleControls()
         }
     }
-    
-    private fun initCamera() {
-        var width = config.resolutionWidth
-        var height = config.resolutionHeight
+
+    private fun checkUsbPermissionAndConnect() {
+        if (mHelper == null) return
         
-        if (config.isPortrait) {
-            if (width > height) {
-                val temp = width
-                width = height
-                height = temp
+        val usbManager = getSystemService(Context.USB_SERVICE) as UsbManager
+        val deviceList = usbManager.deviceList
+        var device: UsbDevice? = null
+
+        for (key in deviceList.keys) {
+            val dev = deviceList[key]
+            if (dev.vendorId == 0x05a3 && dev.productId == 0x9230) { // Generic UVC
+                device = dev
+                break
             }
-        } else {
-            if (height > width) {
-                val temp = width
-                width = height
-                height = temp
-            }
+            // Fallback: ambil device pertama jika tidak terdeteksi spesifik
+            if (device == null) device = dev
         }
-        
-        val cameraRequest = CameraRequest.Builder()
-            .setPreviewWidth(width)
-            .setPreviewHeight(height)
-            .setRenderMode(CameraRequest.RenderMode.NORMAL)
-            .setDefaultRotateType(rotationAngles[currentRotationIndex])
-            .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC) // Audio dari capture card
-            .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
-            .setAspectRatioShow(false) // Tidak perlu aspect ratio indicator di preview mode
-            .create()
-        
-        multiCameraClient = MultiCameraClient(this, object : IDeviceConnectCallBack {
-            override fun onAttachDev(device: UsbDevice?) {
-                multiCameraClient?.requestPermission(device)
-            }
 
-            override fun onDetachDec(device: UsbDevice?) {
-                cameraClient?.closeCamera()
-                cameraClient = null
-            }
-
-            override fun onConnectDev(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
-                val camera = CameraUVC(this@PreviewActivity, device!!)
-                camera.setUsbControlBlock(ctrlBlock)
-                cameraClient = camera
-                
-                cameraClient?.setCameraStateCallBack(object : ICameraStateCallBack {
-                    override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
-                        when (code) {
-                            ICameraStateCallBack.State.OPENED -> {
-                                Log.i(TAG, "Camera opened - starting preview and audio")
-                                StatusRepository.update { it.copy(connected = true) }
-                                
-                                // Mulai preview video
-                                cameraClient?.captureStreamStart()
-                                
-                                // Mulai audio passthrough setelah delay singkat
-                                Handler(Looper.getMainLooper()).postDelayed({
-                                    startAudioPassthrough()
-                                }, 500)
-                            }
-                            ICameraStateCallBack.State.CLOSED -> {
-                                Log.i(TAG, "Camera closed")
-                                StatusRepository.update { it.copy(connected = false) }
-                            }
-                            ICameraStateCallBack.State.ERROR -> {
-                                Log.e(TAG, "Camera error: $msg")
-                                StatusRepository.update { it.copy(connected = false) }
-                                Toast.makeText(this@PreviewActivity, "Camera Error: $msg", Toast.LENGTH_LONG).show()
-                            }
-                            else -> {}
-                        }
-                    }
-                })
-                
-                cameraClient?.openCamera(previewView, cameraRequest)
-            }
-
-            override fun onDisConnectDec(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
-                cameraClient?.closeCamera()
-            }
-
-            override fun onCancelDev(device: UsbDevice?) {
-            }
-        })
-        
-        multiCameraClient?.register()
-    }
-    
-    private fun stopPreview() {
-        Log.i(TAG, "Stopping preview...")
-        
-        // Stop audio passthrough terlebih dahulu
-        stopAudioPassthrough()
-        
-        cameraClient?.captureStreamStop()
-        multiCameraClient?.unRegister()
-        multiCameraClient?.destroy()
-        multiCameraClient = null
-        cameraClient = null
-        
-        StatusRepository.update { it.copy(connected = false) }
-    }
-    
-    /**
-     * Mulai audio passthrough dari capture card ke speaker HP
-     * Menggunakan AudioRecord untuk merekam dari USB audio device
-     * dan AudioTrack untuk memutar suara secara real-time
-     */
-    private fun startAudioPassthrough() {
-        if (isAudioPlaying) {
-            Log.w(TAG, "Audio already playing")
+        if (device == null) {
+            Toast.makeText(this, "Capture card tidak terdeteksi. Coba cabut-pasang.", Toast.LENGTH_LONG).show()
             return
         }
+
+        if (!usbManager.hasPermission(device)) {
+            val permissionIntent = PendingIntent.getBroadcast(
+                this, 0, Intent("ACTION_USB_PERMISSION"),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            val filter = IntentFilter("ACTION_USB_PERMISSION")
+            registerReceiver(mUsbReceiver, filter)
+            usbManager.requestPermission(device, permissionIntent)
+        } else {
+            startPreview(device)
+        }
+    }
+
+    private val mUsbReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val action = intent.action
+            if ("ACTION_USB_PERMISSION" == action) {
+                synchronized(this) {
+                    val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        device?.let { startPreview(it) }
+                    } else {
+                        Toast.makeText(context, "Izin USB ditolak", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun startPreview(device: UsbDevice) {
+        mHelper?.initUSBHost(device, rootView, container)
+        mHelper?.setPreviewSize(1280, 720) // Default HD
+        mHelper?.openCamera()
         
-        try {
-            // Dapatkan buffer size minimum
-            val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-                Log.e(TAG, "Invalid buffer size for audio record")
-                return
-            }
+        // Delay sedikit agar video jalan dulu, baru audio nyala
+        handler.postDelayed({
+            startAudioPassthrough()
+        }, 1000)
+    }
+
+    private fun rotatePreview() {
+        container?.let { view ->
+            val currentRotation = view.rotation
+            val newRotation = (currentRotation + 90) % 360
+            view.rotation = newRotation
             
-            val bufferSize = minBufferSize * BUFFER_SIZE_FACTOR
-            
-            // Setup AudioRecord - merekam dari sumber audio eksternal (USB capture card)
-            val audioAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build()
-            
-            val audioFormat = AudioFormat.Builder()
-                .setEncoding(AUDIO_FORMAT)
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(CHANNEL_CONFIG)
-                .build()
-            
-            audioRecord = AudioRecord(
-                audioAttributes,
-                audioFormat,
-                bufferSize
-            )
-            
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord initialization failed")
-                audioRecord?.release()
-                audioRecord = null
-                return
-            }
-            
-            // Setup AudioTrack untuk playback
-            val trackMinBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, 
-                AudioFormat.CHANNEL_OUT_STEREO, AUDIO_FORMAT)
-            if (trackMinBufferSize == AudioRecord.ERROR) {
-                Log.e(TAG, "Invalid buffer size for audio track")
-                return
-            }
-            
-            val trackAttributes = AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                .build()
-            
-            val trackFormat = AudioFormat.Builder()
-                .setEncoding(AUDIO_FORMAT)
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                .build()
-            
-            audioTrack = AudioTrack(
-                trackAttributes,
-                trackFormat,
-                trackMinBufferSize * BUFFER_SIZE_FACTOR,
-                AudioTrack.MODE_STREAM,
-                0
-            )
-            
-            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioTrack initialization failed")
-                audioTrack?.release()
-                audioTrack = null
-                return
-            }
-            
-            // Mulai thread untuk streaming audio
-            audioThread = Executors.newSingleThreadExecutor()
-            audioThread?.execute {
-                try {
-                    audioRecord?.startRecording()
-                    audioTrack?.play()
-                    isAudioPlaying = true
+            // Opsional: Adjust scale jika perlu agar full screen saat rotasi
+            // Ini sederhana hanya memutar view
+            Toast.makeText(this, "Rotasi: ${newRotation.toInt()}°", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun toggleControls() {
+        val isVisible = btnDetect?.visibility == View.VISIBLE
+        if (isVisible) {
+            hideControls()
+        } else {
+            showControls()
+        }
+    }
+
+    private fun hideControls() {
+        btnDetect?.visibility = View.GONE
+        btnRotate?.visibility = View.GONE
+        btnExit?.visibility = View.GONE
+    }
+
+    private fun showControls() {
+        btnDetect?.visibility = View.VISIBLE
+        btnRotate?.visibility = View.VISIBLE
+        btnExit?.visibility = View.VISIBLE
+        
+        // Reset timer auto-hide
+        handler.removeCallbacks(hideControlsRunnable)
+        handler.postDelayed(hideControlsRunnable, 5000) // Hide setelah 5 detik
+    }
+
+    // --- AUDIO PASSTHROUGH LOGIC ---
+    private fun startAudioPassthrough() {
+        if (isAudioPlaying) return
+
+        isAudioPlaying = true
+        audioThread = Thread {
+            var audioRecord: AudioRecord? = null
+            var audioTrack: AudioTrack? = null
+            try {
+                val minRecBuf = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+                val minPlayBuf = AudioTrack.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+                val bufferSize = maxOf(minRecBuf, minPlayBuf) * 2
+
+                audioRecord = AudioRecord(
+                    MediaRecorder.AudioSource.DEFAULT, // Atau MIC jika DEFAULT gagal
+                    SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    bufferSize
+                )
+
+                val audioAttrs = AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+
+                val audioFormat = AudioFormat.Builder()
+                    .setEncoding(AUDIO_FORMAT)
+                    .setSampleRate(SAMPLE_RATE)
+                    .setChannelMask(CHANNEL_CONFIG)
+                    .build()
+
+                audioTrack = AudioTrack(
+                    audioAttrs,
+                    audioFormat,
+                    bufferSize,
+                    AudioTrack.MODE_STREAM,
+                    0
+                )
+
+                if (audioRecord.state == AudioRecord.STATE_INITIALIZED && 
+                    audioTrack.state == AudioTrack.STATE_INITIALIZED) {
                     
-                    Log.i(TAG, "Audio passthrough started - ${SAMPLE_RATE}Hz stereo")
-                    
+                    audioTrack.play()
+                    audioRecord.startRecording()
+
                     val buffer = ByteArray(bufferSize)
                     while (isAudioPlaying) {
-                        val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                        if (bytesRead > 0) {
-                            audioTrack?.write(buffer, 0, bytesRead)
-                        } else if (bytesRead < 0) {
-                            Log.e(TAG, "Error reading audio: $bytesRead")
-                            break
+                        val read = audioRecord.read(buffer, 0, buffer.size)
+                        if (read > 0) {
+                            audioTrack.write(buffer, 0, read)
                         }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Audio passthrough error: ${e.message}")
-                    e.printStackTrace()
+                } else {
+                    Log.e("Audio", "Gagal inisialisasi AudioRecord atau AudioTrack")
                 }
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+                Log.e("Audio", "Error audio thread: ${e.message}")
+            } finally {
+                audioRecord?.stop()
+                audioRecord?.release()
+                audioTrack?.stop()
+                audioTrack?.release()
             }
-            
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start audio passthrough: ${e.message}")
-            e.printStackTrace()
         }
+        audioThread?.start()
     }
-    
-    /**
-     * Stop audio passthrough dan release resources
-     */
-    private fun stopAudioPassthrough() {
-        try {
-            isAudioPlaying = false
-            
-            audioThread?.let {
-                it.shutdown()
-                if (!it.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS)) {
-                    it.shutdownNow()
-                }
-                audioThread = null
-            }
-            
-            audioRecord?.let {
-                try {
-                    if (it.state == AudioRecord.STATE_INITIALIZED) {
-                        it.stop()
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error stopping AudioRecord: ${e.message}")
-                }
-                it.release()
-                audioRecord = null
-            }
-            
-            audioTrack?.let {
-                try {
-                    if (it.state == AudioTrack.STATE_INITIALIZED) {
-                        it.stop()
-                        it.flush()
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Error stopping AudioTrack: ${e.message}")
-                }
-                it.release()
-                audioTrack = null
-            }
-            
-            Log.i(TAG, "Audio passthrough stopped")
-        } catch (e: Exception) {
-            Log.e(TAG, "Error stopping audio: ${e.message}")
-            e.printStackTrace()
-        }
+
+    private fun stopAudio() {
+        isAudioPlaying = false
+        audioThread?.join(1000)
+        audioThread = null
     }
-    
-    private fun rotatePreview() {
-        // Increment rotation index (0 -> 1 -> 2 -> 3 -> 0)
-        currentRotationIndex = (currentRotationIndex + 1) % rotationAngles.size
-        
-        Log.i(TAG, "Rotating preview to angle index: $currentRotationIndex")
-        
-        // Restart preview dengan rotasi baru
-        if (multiCameraClient != null) {
-            stopPreview()
-            startPreview()
-        }
-    }
-    
-    override fun onResume() {
-        super.onResume()
-        hideSystemUI()
-    }
-    
-    override fun onPause() {
-        super.onPause()
-        // Jangan stop preview saat pause, biarkan tetap jalan di background
-    }
-    
+
     override fun onDestroy() {
         super.onDestroy()
-        stopAudioPassthrough()
-        stopPreview()
+        stopAudio()
+        unregisterReceiver(mUsbReceiver)
+        mHelper?.unregisterUSB()
+        mHelper?.closeCamera()
+        mHelper?.release()
     }
+
+    // --- Interface Callbacks (Wajib ada meski kosong) ---
+    override fun onAttachDev(isSuccess: Boolean) {}
+    override fun onDettachDev() {}
+    override fun onConnectDev(isSuccess: Boolean) {}
+    override fun onDisconnectDev() {}
     
-    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 101) {
-            val allGranted = grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
-            if (allGranted) {
-                Log.i(TAG, "All permissions granted")
-            } else {
-                Toast.makeText(this, "Permission RECORD_AUDIO is required for audio passthrough", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-    
-    private fun checkPermissions(): Boolean {
-        val permissions = mutableListOf(
-            android.Manifest.permission.CAMERA,
-            android.Manifest.permission.RECORD_AUDIO
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        
-        return permissions.all {
-            ContextCompat.checkSelfPermission(this, it) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        }
-    }
-    
-    private fun requestPermissions() {
-        val permissions = mutableListOf(
-            android.Manifest.permission.CAMERA,
-            android.Manifest.permission.RECORD_AUDIO
-        )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            permissions.add(android.Manifest.permission.POST_NOTIFICATIONS)
-        }
-        
-        ActivityCompat.requestPermissions(
-            this,
-            permissions.toTypedArray(),
-            101
-        )
+    override fun onFrameData(data: ByteBuffer?, width: Int, height: Int, format: Int) {
+        // Data frame diterima oleh library secara otomatis ke SurfaceView
     }
 }
