@@ -2,6 +2,7 @@ package com.ufc.app.ui
 
 import android.annotation.SuppressLint
 import android.hardware.usb.UsbDevice
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -244,11 +245,6 @@ class PreviewActivity : AppCompatActivity() {
         })
         
         multiCameraClient?.register()
-    }
-    
-    private fun extractSpsPps(buffer: ByteBuffer, offset: Int, size: Int) {
-        // Fungsi ini tidak dipakai di preview-only mode
-        // Dibiarkan untuk kompatibilitas kode
     }
     
     private fun stopPreview() {
