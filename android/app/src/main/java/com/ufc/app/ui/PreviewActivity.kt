@@ -2,6 +2,10 @@ package com.ufc.app.ui
 
 import android.annotation.SuppressLint
 import android.hardware.usb.UsbDevice
+import android.media.AudioAttributes
+import android.media.AudioFormat
+import android.media.AudioRecord
+import android.media.AudioTrack
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -29,7 +33,9 @@ import com.jiangdg.usb.USBMonitor
 import com.ufc.app.R
 import com.ufc.app.StatusRepository
 import com.ufc.app.model.StreamConfig
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.*
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 
 /**
  * Activity khusus untuk Preview Mode - berfungsi sebagai monitor/layar tambahan.
@@ -41,12 +47,24 @@ class PreviewActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PreviewActivity"
         private const val AUTO_HIDE_DELAY_MS = 3000L
+        
+        // Audio passthrough constants
+        private const val SAMPLE_RATE = 48000
+        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
+        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
+        private const val BUFFER_SIZE_FACTOR = 4
     }
 
     private lateinit var config: StreamConfig
     private var previewView: AspectRatioTextureView? = null
     private var multiCameraClient: MultiCameraClient? = null
     private var cameraClient: MultiCameraClient.ICamera? = null
+    
+    // Audio passthrough
+    private var audioRecord: AudioRecord? = null
+    private var audioTrack: AudioTrack? = null
+    private var audioThread: ExecutorService? = null
+    private var isAudioPlaying = false
     
     // UI Components
     private var controlsView: View? = null
@@ -230,11 +248,16 @@ class PreviewActivity : AppCompatActivity() {
                     override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
                         when (code) {
                             ICameraStateCallBack.State.OPENED -> {
-                                Log.i(TAG, "Camera opened - starting preview")
+                                Log.i(TAG, "Camera opened - starting preview and audio")
                                 StatusRepository.update { it.copy(connected = true) }
                                 
-                                // Mulai preview
+                                // Mulai preview video
                                 cameraClient?.captureStreamStart()
+                                
+                                // Mulai audio passthrough setelah delay singkat
+                                Handler(Looper.getMainLooper()).postDelayed({
+                                    startAudioPassthrough()
+                                }, 500)
                             }
                             ICameraStateCallBack.State.CLOSED -> {
                                 Log.i(TAG, "Camera closed")
@@ -267,6 +290,9 @@ class PreviewActivity : AppCompatActivity() {
     private fun stopPreview() {
         Log.i(TAG, "Stopping preview...")
         
+        // Stop audio passthrough terlebih dahulu
+        stopAudioPassthrough()
+        
         cameraClient?.captureStreamStop()
         multiCameraClient?.unRegister()
         multiCameraClient?.destroy()
@@ -274,6 +300,165 @@ class PreviewActivity : AppCompatActivity() {
         cameraClient = null
         
         StatusRepository.update { it.copy(connected = false) }
+    }
+    
+    /**
+     * Mulai audio passthrough dari capture card ke speaker HP
+     * Menggunakan AudioRecord untuk merekam dari USB audio device
+     * dan AudioTrack untuk memutar suara secara real-time
+     */
+    private fun startAudioPassthrough() {
+        if (isAudioPlaying) {
+            Log.w(TAG, "Audio already playing")
+            return
+        }
+        
+        try {
+            // Dapatkan buffer size minimum
+            val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
+            if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
+                Log.e(TAG, "Invalid buffer size for audio record")
+                return
+            }
+            
+            val bufferSize = minBufferSize * BUFFER_SIZE_FACTOR
+            
+            // Setup AudioRecord - merekam dari sumber audio eksternal (USB capture card)
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build()
+            
+            val audioFormat = AudioFormat.Builder()
+                .setEncoding(AUDIO_FORMAT)
+                .setSampleRate(SAMPLE_RATE)
+                .setChannelMask(AudioFormat.CHANNEL_IN_STEREO)
+                .build()
+            
+            audioRecord = AudioRecord(
+                audioAttributes,
+                audioFormat,
+                bufferSize
+            )
+            
+            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioRecord initialization failed")
+                audioRecord?.release()
+                audioRecord = null
+                return
+            }
+            
+            // Setup AudioTrack untuk playback
+            val trackMinBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, 
+                AudioFormat.CHANNEL_OUT_STEREO, AUDIO_FORMAT)
+            if (trackMinBufferSize == AudioRecord.ERROR) {
+                Log.e(TAG, "Invalid buffer size for audio track")
+                return
+            }
+            
+            val trackAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+            
+            val trackFormat = AudioFormat.Builder()
+                .setEncoding(AUDIO_FORMAT)
+                .setSampleRate(SAMPLE_RATE)
+                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                .build()
+            
+            audioTrack = AudioTrack(
+                trackAttributes,
+                trackFormat,
+                trackMinBufferSize * BUFFER_SIZE_FACTOR,
+                AudioTrack.MODE_STREAM,
+                0
+            )
+            
+            if (audioTrack?.state != AudioTrack.STATE_INITIALIZED) {
+                Log.e(TAG, "AudioTrack initialization failed")
+                audioTrack?.release()
+                audioTrack = null
+                return
+            }
+            
+            // Mulai thread untuk streaming audio
+            audioThread = Executors.newSingleThreadExecutor()
+            audioThread?.execute {
+                try {
+                    audioRecord?.startRecording()
+                    audioTrack?.play()
+                    isAudioPlaying = true
+                    
+                    Log.i(TAG, "Audio passthrough started - ${SAMPLE_RATE}Hz stereo")
+                    
+                    val buffer = ByteArray(bufferSize)
+                    while (isAudioPlaying) {
+                        val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
+                        if (bytesRead > 0) {
+                            audioTrack?.write(buffer, 0, bytesRead)
+                        } else if (bytesRead < 0) {
+                            Log.e(TAG, "Error reading audio: $bytesRead")
+                            break
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Audio passthrough error: ${e.message}")
+                    e.printStackTrace()
+                }
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start audio passthrough: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+    
+    /**
+     * Stop audio passthrough dan release resources
+     */
+    private fun stopAudioPassthrough() {
+        try {
+            isAudioPlaying = false
+            
+            audioThread?.let {
+                it.shutdown()
+                if (!it.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS)) {
+                    it.shutdownNow()
+                }
+                audioThread = null
+            }
+            
+            audioRecord?.let {
+                try {
+                    if (it.state == AudioRecord.STATE_INITIALIZED) {
+                        it.stop()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping AudioRecord: ${e.message}")
+                }
+                it.release()
+                audioRecord = null
+            }
+            
+            audioTrack?.let {
+                try {
+                    if (it.state == AudioTrack.STATE_INITIALIZED) {
+                        it.stop()
+                        it.flush()
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error stopping AudioTrack: ${e.message}")
+                }
+                it.release()
+                audioTrack = null
+            }
+            
+            Log.i(TAG, "Audio passthrough stopped")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping audio: ${e.message}")
+            e.printStackTrace()
+        }
     }
     
     private fun rotatePreview() {
@@ -301,7 +486,20 @@ class PreviewActivity : AppCompatActivity() {
     
     override fun onDestroy() {
         super.onDestroy()
+        stopAudioPassthrough()
         stopPreview()
+    }
+    
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 101) {
+            val allGranted = grantResults.all { it == android.content.pm.PackageManager.PERMISSION_GRANTED }
+            if (allGranted) {
+                Log.i(TAG, "All permissions granted")
+            } else {
+                Toast.makeText(this, "Permission RECORD_AUDIO is required for audio passthrough", Toast.LENGTH_LONG).show()
+            }
+        }
     }
     
     private fun checkPermissions(): Boolean {
