@@ -70,14 +70,8 @@ class PreviewActivity : AppCompatActivity() {
     private var btnRotate: Button? = null
     private var btnStop: Button? = null
     
-    // Rotation state - default to landscape (0 degrees)
-    private var currentRotationIndex = 0
-    private val rotationAngles = listOf(
-        RotateType.ANGLE_0,       // Default: landscape/horizontal
-        RotateType.ANGLE_90,      // Portrait/vertical
-        RotateType.ANGLE_180,     // Landscape flipped
-        RotateType.ANGLE_270      // Portrait flipped
-    )
+    // Orientasi dikunci landscape lewat AndroidManifest.xml (android:screenOrientation),
+    // jadi tidak perlu lagi cycling RotateType di sini.
     
     // Auto-hide handler
     private val autoHideHandler = Handler(Looper.getMainLooper())
@@ -108,6 +102,7 @@ class PreviewActivity : AppCompatActivity() {
         textStatus = findViewById(R.id.textPreviewStatus)
         btnDetectUsb = findViewById(R.id.btnDetectUsb)
         btnRotate = findViewById(R.id.btnRotate)
+        btnRotate?.visibility = View.GONE // sudah tidak dipakai - orientasi dikunci landscape lewat manifest
         btnStop = findViewById(R.id.btnStopPreview)
         
         // Setup tombol detect USB - untuk mendeteksi dan memulai preview
@@ -121,10 +116,7 @@ class PreviewActivity : AppCompatActivity() {
             }
         }
         
-        // Setup tombol rotasi - untuk mengubah orientasi tampilan
-        btnRotate?.setOnClickListener {
-            rotatePreview()
-        }
+        // Tombol rotate sudah disembunyikan (tidak diperlukan, orientasi sudah landscape by default)
         
         // Setup tombol keluar
         btnStop?.setOnClickListener {
@@ -221,14 +213,13 @@ class PreviewActivity : AppCompatActivity() {
         config.resolutionWidth = width
         config.resolutionHeight = height
         
-        val currentRotation = rotationAngles[currentRotationIndex]
-        Log.i(TAG, "Initializing camera with resolution: ${width}x${height}, rotation: $currentRotation (index: $currentRotationIndex)")
+        Log.i(TAG, "Initializing camera with resolution: ${width}x${height}")
         
         val cameraRequest = CameraRequest.Builder()
             .setPreviewWidth(width)
             .setPreviewHeight(height)
-            .setRenderMode(CameraRequest.RenderMode.OPENGL) // wajib OPENGL agar RotateType berfungsi
-            .setDefaultRotateType(currentRotation)
+            .setRenderMode(CameraRequest.RenderMode.NORMAL) // OPENGL bikin corrupt di capture card ini, balik ke NORMAL
+            .setDefaultRotateType(RotateType.ANGLE_0) // orientasi sudah dikunci lewat manifest, tidak perlu rotate di sini
             .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC) // Audio dari capture card
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(false) // Tidak perlu aspect ratio indicator di preview mode
@@ -464,37 +455,6 @@ class PreviewActivity : AppCompatActivity() {
         }
     }
     
-    private fun rotatePreview() {
-        // Increment rotation index (0 -> 1 -> 2 -> 3 -> 0)
-        currentRotationIndex = (currentRotationIndex + 1) % rotationAngles.size
-        
-        Log.i(TAG, "Rotating preview to angle: ${rotationAngles[currentRotationIndex]} (index: $currentRotationIndex)")
-        Toast.makeText(this, "Rotation: ${rotationAngles[currentRotationIndex]}", Toast.LENGTH_SHORT).show()
-        
-        // Restart preview dengan rotasi baru - HARUS stop dulu sepenuhnya
-        if (multiCameraClient != null) {
-            // Stop audio terlebih dahulu
-            stopAudioPassthrough()
-            
-            // Stop capture stream
-            cameraClient?.captureStreamStop()
-            
-            // Close camera untuk reset sepenuhnya
-            cameraClient?.closeCamera()
-            cameraClient = null
-            
-            // Destroy multiCameraClient
-            multiCameraClient?.unRegister()
-            multiCameraClient?.destroy()
-            multiCameraClient = null
-            
-            // Delay singkat untuk memastikan camera benar-benar tertutup
-            Handler(Looper.getMainLooper()).postDelayed({
-                Log.i(TAG, "Re-initializing camera with new rotation...")
-                startPreview()
-            }, 500)
-        }
-    }
     
     override fun onResume() {
         super.onResume()
