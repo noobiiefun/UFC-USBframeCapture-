@@ -1,0 +1,76 @@
+diff --git a/android/app/src/main/AndroidManifest.xml b/android/app/src/main/AndroidManifest.xml
+index 257ac8f..730f5d7 100644
+--- a/android/app/src/main/AndroidManifest.xml
++++ b/android/app/src/main/AndroidManifest.xml
+@@ -38,6 +38,7 @@
+             android:theme="@style/Theme.App.Starting"
+             android:exported="false"
+             android:launchMode="singleTop"
++            android:screenOrientation="landscape"
+             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize" />
+ 
+         <activity
+diff --git a/android/app/src/main/java/com/ufc/app/ui/PreviewActivity.kt b/android/app/src/main/java/com/ufc/app/ui/PreviewActivity.kt
+index a341966..ae36366 100644
+--- a/android/app/src/main/java/com/ufc/app/ui/PreviewActivity.kt
++++ b/android/app/src/main/java/com/ufc/app/ui/PreviewActivity.kt
+@@ -3,7 +3,9 @@ package com.ufc.app.ui
+ import android.annotation.SuppressLint
+ import android.hardware.usb.UsbDevice
+ import android.media.AudioAttributes
++import android.media.AudioDeviceInfo
+ import android.media.AudioFormat
++import android.media.AudioManager
+ import android.media.AudioRecord
+ import android.media.AudioTrack
+ import android.media.MediaRecorder
+@@ -231,7 +233,7 @@ class PreviewActivity : AppCompatActivity() {
+         val cameraRequest = CameraRequest.Builder()
+             .setPreviewWidth(width)
+             .setPreviewHeight(height)
+-            .setRenderMode(CameraRequest.RenderMode.NORMAL)
++            .setRenderMode(CameraRequest.RenderMode.OPENGL) // wajib OPENGL agar RotateType berfungsi
+             .setDefaultRotateType(currentRotation)
+             .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC) // Audio dari capture card
+             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
+@@ -334,13 +336,33 @@ class PreviewActivity : AppCompatActivity() {
+             val bufferSize = minBufferSize * BUFFER_SIZE_FACTOR
+             
+             // Setup AudioRecord - merekam dari sumber audio eksternal (USB capture card)
+-            audioRecord = AudioRecord(
+-                MediaRecorder.AudioSource.MIC,
+-                SAMPLE_RATE,
+-                CHANNEL_CONFIG,
+-                AUDIO_FORMAT,
+-                bufferSize
+-            )
++            // PENTING: pakai AudioRecord.Builder + setPreferredDevice supaya benar-benar
++            // ambil audio dari capture card USB, BUKAN mic internal HP.
++            audioRecord = AudioRecord.Builder()
++                .setAudioSource(MediaRecorder.AudioSource.DEFAULT)
++                .setAudioFormat(
++                    AudioFormat.Builder()
++                        .setEncoding(AUDIO_FORMAT)
++                        .setSampleRate(SAMPLE_RATE)
++                        .setChannelMask(CHANNEL_CONFIG)
++                        .build()
++                )
++                .setBufferSizeInBytes(bufferSize)
++                .build()
++            
++            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
++            val usbInputDevice = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
++                .firstOrNull {
++                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
++                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
++                }
++            
++            if (usbInputDevice != null) {
++                val applied = audioRecord?.setPreferredDevice(usbInputDevice)
++                Log.i(TAG, "USB audio input device found: ${usbInputDevice.productName}, applied=$applied")
++            } else {
++                Log.w(TAG, "USB audio input device TIDAK ditemukan - audio kemungkinan tetap dari mic internal HP")
++            }
+             
+             if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
+                 Log.e(TAG, "AudioRecord initialization failed")
