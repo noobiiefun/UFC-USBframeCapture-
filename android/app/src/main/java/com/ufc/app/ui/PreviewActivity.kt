@@ -78,7 +78,9 @@ class PreviewActivity : AppCompatActivity() {
     private var currentRotationIndex = 0
     private val rotationAngles = listOf(
         RotateType.ANGLE_0,       // Default: landscape/horizontal
-        RotateType.ANGLE_90       // Portrait/vertical
+        RotateType.ANGLE_90,      // Portrait/vertical
+        RotateType.ANGLE_180,     // Landscape flipped
+        RotateType.ANGLE_270      // Portrait flipped
     )
     
     // Auto-hide handler
@@ -223,13 +225,14 @@ class PreviewActivity : AppCompatActivity() {
         config.resolutionWidth = width
         config.resolutionHeight = height
         
-        Log.i(TAG, "Initializing camera with resolution: ${width}x${height}, rotation: ${rotationAngles[currentRotationIndex]}")
+        val currentRotation = rotationAngles[currentRotationIndex]
+        Log.i(TAG, "Initializing camera with resolution: ${width}x${height}, rotation: $currentRotation (index: $currentRotationIndex)")
         
         val cameraRequest = CameraRequest.Builder()
             .setPreviewWidth(width)
             .setPreviewHeight(height)
             .setRenderMode(CameraRequest.RenderMode.NORMAL)
-            .setDefaultRotateType(rotationAngles[currentRotationIndex])
+            .setDefaultRotateType(currentRotation)
             .setAudioSource(CameraRequest.AudioSource.SOURCE_DEV_MIC) // Audio dari capture card
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(false) // Tidak perlu aspect ratio indicator di preview mode
@@ -463,7 +466,8 @@ class PreviewActivity : AppCompatActivity() {
         // Increment rotation index (0 -> 1 -> 2 -> 3 -> 0)
         currentRotationIndex = (currentRotationIndex + 1) % rotationAngles.size
         
-        Log.i(TAG, "Rotating preview to angle index: $currentRotationIndex")
+        Log.i(TAG, "Rotating preview to angle: ${rotationAngles[currentRotationIndex]} (index: $currentRotationIndex)")
+        Toast.makeText(this, "Rotation: ${rotationAngles[currentRotationIndex]}", Toast.LENGTH_SHORT).show()
         
         // Restart preview dengan rotasi baru - HARUS stop dulu sepenuhnya
         if (multiCameraClient != null) {
@@ -486,7 +490,7 @@ class PreviewActivity : AppCompatActivity() {
             Handler(Looper.getMainLooper()).postDelayed({
                 Log.i(TAG, "Re-initializing camera with new rotation...")
                 startPreview()
-            }, 300)
+            }, 500)
         }
     }
     
