@@ -47,7 +47,7 @@ class PreviewActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PreviewActivity"
         private const val AUTO_HIDE_DELAY_MS = 3000L
-        private const val BUFFER_SIZE_FACTOR = 4
+        private const val BUFFER_SIZE_FACTOR = 8 // dinaikkan dari 4 - beri headroom lebih untuk redam jitter USB
     }
 
     private lateinit var config: StreamConfig
@@ -388,21 +388,32 @@ class PreviewActivity : AppCompatActivity() {
             // Poll PCM dari antrian UAC lalu tulis ke AudioTrack
             audioThread = Executors.newSingleThreadExecutor()
             audioThread?.execute {
-                try {
-                    Log.i(TAG, "Audio passthrough (UAC) started")
-                    while (isAudioPlaying) {
+                Log.i(TAG, "Audio passthrough (UAC) started")
+                var consecutiveErrors = 0
+                while (isAudioPlaying) {
+                    try {
                         val raw = audioStrategy?.read()
                         if (raw != null) {
                             audioTrack?.write(raw.data, 0, raw.size)
+                            consecutiveErrors = 0
                         } else {
                             // belum ada data baru, jangan busy-loop
                             Thread.sleep(5)
                         }
+                    } catch (e: Exception) {
+                        // JANGAN biarkan satu error mematikan thread ini selamanya -
+                        // log, lanjut ke iterasi berikutnya. Kalau errornya beruntun
+                        // terus-menerus (device benar-benar lepas), baru berhenti.
+                        consecutiveErrors++
+                        Log.e(TAG, "Audio loop error (#$consecutiveErrors): ${e.message}")
+                        if (consecutiveErrors >= 50) {
+                            Log.e(TAG, "Terlalu banyak error beruntun, menghentikan audio thread")
+                            break
+                        }
+                        Thread.sleep(20)
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Audio passthrough error: ${e.message}")
-                    e.printStackTrace()
                 }
+                Log.i(TAG, "Audio passthrough (UAC) thread berhenti")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to setup AudioTrack: ${e.message}")
