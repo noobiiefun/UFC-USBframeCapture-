@@ -246,11 +246,16 @@ class PreviewActivity : AppCompatActivity() {
                     override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
                         when (code) {
                             ICameraStateCallBack.State.OPENED -> {
-                                Log.i(TAG, "Camera opened - starting preview and audio")
+                                Log.i(TAG, "Camera opened - starting audio")
                                 StatusRepository.update { it.copy(connected = true) }
                                 
-                                // Mulai preview video
-                                cameraClient?.captureStreamStart()
+                                // CATATAN: sengaja TIDAK panggil captureStreamStart() di sini.
+                                // Fungsi itu untuk mendapatkan stream H.264/AAC (encode utk push/rekam),
+                                // preview mentah ke TextureView sudah otomatis jalan lewat openCamera().
+                                // Kalau dipanggil, dua efek buruk: (1) encoder H.264 jalan sia-sia -> boros
+                                // CPU/GPU -> FPS turun & preview makin gampang corrupt; (2) library ikut
+                                // claim channel audio UAC untuk di-encode AAC, BENTROK dengan
+                                // AudioStrategyUAC manual kita di bawah yang mau claim channel yang sama.
                                 
                                 // Mulai audio passthrough setelah delay singkat
                                 Handler(Looper.getMainLooper()).postDelayed({
@@ -291,7 +296,6 @@ class PreviewActivity : AppCompatActivity() {
         // Stop audio passthrough terlebih dahulu
         stopAudioPassthrough()
         
-        cameraClient?.captureStreamStop()
         multiCameraClient?.unRegister()
         multiCameraClient?.destroy()
         multiCameraClient = null
