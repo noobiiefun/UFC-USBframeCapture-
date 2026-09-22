@@ -3,12 +3,8 @@ package com.ufc.app.ui
 import android.annotation.SuppressLint
 import android.hardware.usb.UsbDevice
 import android.media.AudioAttributes
-import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
-import android.media.AudioRecord
 import android.media.AudioTrack
-import android.media.MediaRecorder
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -30,6 +26,7 @@ import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IDeviceConnectCallBack
 import com.jiangdg.ausbc.camera.CameraUVC
 import com.jiangdg.ausbc.camera.bean.CameraRequest
+import com.jiangdg.ausbc.encode.audio.AudioStrategyUAC
 import com.jiangdg.ausbc.render.env.RotateType
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.usb.USBMonitor
@@ -50,11 +47,6 @@ class PreviewActivity : AppCompatActivity() {
     companion object {
         private const val TAG = "PreviewActivity"
         private const val AUTO_HIDE_DELAY_MS = 3000L
-        
-        // Audio passthrough constants
-        private const val SAMPLE_RATE = 48000
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_STEREO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
         private const val BUFFER_SIZE_FACTOR = 4
     }
 
@@ -62,9 +54,11 @@ class PreviewActivity : AppCompatActivity() {
     private var previewView: AspectRatioTextureView? = null
     private var multiCameraClient: MultiCameraClient? = null
     private var cameraClient: MultiCameraClient.ICamera? = null
+    private var usbControlBlock: USBMonitor.UsbControlBlock? = null
     
-    // Audio passthrough
-    private var audioRecord: AudioRecord? = null
+    // Audio passthrough - pakai jalur UAC bawaan library (bukan AudioRecord generik),
+    // supaya audio benar-benar diambil dari capture card, bukan mic internal HP.
+    private var audioStrategy: AudioStrategyUAC? = null
     private var audioTrack: AudioTrack? = null
     private var audioThread: ExecutorService? = null
     private var isAudioPlaying = false
@@ -248,12 +242,14 @@ class PreviewActivity : AppCompatActivity() {
             override fun onDetachDec(device: UsbDevice?) {
                 cameraClient?.closeCamera()
                 cameraClient = null
+                usbControlBlock = null
             }
 
             override fun onConnectDev(device: UsbDevice?, ctrlBlock: USBMonitor.UsbControlBlock?) {
                 val camera = CameraUVC(this@PreviewActivity, device!!)
                 camera.setUsbControlBlock(ctrlBlock)
                 cameraClient = camera
+                usbControlBlock = ctrlBlock // simpan untuk jalur audio UAC (bukan AudioRecord generik)
                 
                 cameraClient?.setCameraStateCallBack(object : ICameraStateCallBack {
                     override fun onCameraState(self: MultiCameraClient.ICamera, code: ICameraStateCallBack.State, msg: String?) {
@@ -314,67 +310,57 @@ class PreviewActivity : AppCompatActivity() {
     }
     
     /**
-     * Mulai audio passthrough dari capture card ke speaker HP
-     * Menggunakan AudioRecord untuk merekam dari USB audio device
-     * dan AudioTrack untuk memutar suara secara real-time
+     * Mulai audio passthrough dari capture card ke speaker HP.
+     * PENTING: pakai AudioStrategyUAC (jalur bawaan library, sama seperti yang dipakai
+     * "mode biasa" lewat CameraFragment.startPlayMic()) yang membaca PCM langsung dari
+     * interface USB Audio Class (UAC) capture card lewat UsbControlBlock yang sama
+     * dengan yang dipakai kamera. Ini BUKAN AudioRecord generik Android, jadi tidak
+     * bergantung pada apakah Android berhasil mendeteksi capture card sebagai
+     * "audio input device" biasa (banyak capture card MS2109 tidak terdeteksi rapi
+     * di situ, makanya sebelumnya audio tidak masuk walau device sudah dipilih).
      */
-    @SuppressLint("MissingPermission")
     private fun startAudioPassthrough() {
         if (isAudioPlaying) {
             Log.w(TAG, "Audio already playing")
             return
         }
         
+        val ctrlBlock = usbControlBlock
+        if (ctrlBlock == null) {
+            Log.e(TAG, "Tidak ada UsbControlBlock aktif, tidak bisa mulai audio UAC")
+            return
+        }
+        
         try {
-            // Dapatkan buffer size minimum
-            val minBufferSize = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT)
-            if (minBufferSize == AudioRecord.ERROR || minBufferSize == AudioRecord.ERROR_BAD_VALUE) {
-                Log.e(TAG, "Invalid buffer size for audio record")
-                return
-            }
+            val strategy = AudioStrategyUAC(ctrlBlock)
+            strategy.initAudioRecord()
+            strategy.startRecording()
+            audioStrategy = strategy
             
-            val bufferSize = minBufferSize * BUFFER_SIZE_FACTOR
+            // Beri sedikit waktu untuk UAC handler negosiasi format asli device
+            // (sample rate/bit depth/channel capture card BISA BEDA-BEDA per device,
+            // jangan diasumsikan 48000Hz stereo 16-bit seperti kode lama).
+            Handler(Looper.getMainLooper()).postDelayed({
+                setupAudioTrackAndStartPolling(strategy)
+            }, 300)
             
-            // Setup AudioRecord - merekam dari sumber audio eksternal (USB capture card)
-            // PENTING: pakai AudioRecord.Builder + setPreferredDevice supaya benar-benar
-            // ambil audio dari capture card USB, BUKAN mic internal HP.
-            audioRecord = AudioRecord.Builder()
-                .setAudioSource(MediaRecorder.AudioSource.DEFAULT)
-                .setAudioFormat(
-                    AudioFormat.Builder()
-                        .setEncoding(AUDIO_FORMAT)
-                        .setSampleRate(SAMPLE_RATE)
-                        .setChannelMask(CHANNEL_CONFIG)
-                        .build()
-                )
-                .setBufferSizeInBytes(bufferSize)
-                .build()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start audio passthrough: ${e.message}")
+            e.printStackTrace()
+        }
+    }
+    
+    private fun setupAudioTrackAndStartPolling(strategy: AudioStrategyUAC) {
+        try {
+            val sampleRate = strategy.getSampleRate()
+            val audioFormat = strategy.getAudioFormat()
+            val isMono = strategy.getChannelConfig() == AudioFormat.CHANNEL_IN_MONO
+            val outChannelConfig = if (isMono) AudioFormat.CHANNEL_OUT_MONO else AudioFormat.CHANNEL_OUT_STEREO
             
-            val audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
-            val usbInputDevice = audioManager.getDevices(AudioManager.GET_DEVICES_INPUTS)
-                .firstOrNull {
-                    it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
-                    it.type == AudioDeviceInfo.TYPE_USB_HEADSET
-                }
+            Log.i(TAG, "UAC audio format terdeteksi: ${sampleRate}Hz, mono=$isMono, format=$audioFormat")
             
-            if (usbInputDevice != null) {
-                val applied = audioRecord?.setPreferredDevice(usbInputDevice)
-                Log.i(TAG, "USB audio input device found: ${usbInputDevice.productName}, applied=$applied")
-            } else {
-                Log.w(TAG, "USB audio input device TIDAK ditemukan - audio kemungkinan tetap dari mic internal HP")
-            }
-            
-            if (audioRecord?.state != AudioRecord.STATE_INITIALIZED) {
-                Log.e(TAG, "AudioRecord initialization failed")
-                audioRecord?.release()
-                audioRecord = null
-                return
-            }
-            
-            // Setup AudioTrack untuk playback
-            val trackMinBufferSize = AudioTrack.getMinBufferSize(SAMPLE_RATE, 
-                AudioFormat.CHANNEL_OUT_STEREO, AUDIO_FORMAT)
-            if (trackMinBufferSize == AudioRecord.ERROR) {
+            val trackMinBufferSize = AudioTrack.getMinBufferSize(sampleRate, outChannelConfig, audioFormat)
+            if (trackMinBufferSize <= 0) {
                 Log.e(TAG, "Invalid buffer size for audio track")
                 return
             }
@@ -385,9 +371,9 @@ class PreviewActivity : AppCompatActivity() {
                 .build()
             
             val trackFormat = AudioFormat.Builder()
-                .setEncoding(AUDIO_FORMAT)
-                .setSampleRate(SAMPLE_RATE)
-                .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                .setEncoding(audioFormat)
+                .setSampleRate(sampleRate)
+                .setChannelMask(outChannelConfig)
                 .build()
             
             audioTrack = AudioTrack(
@@ -405,24 +391,21 @@ class PreviewActivity : AppCompatActivity() {
                 return
             }
             
-            // Mulai thread untuk streaming audio
+            audioTrack?.play()
+            isAudioPlaying = true
+            
+            // Poll PCM dari antrian UAC lalu tulis ke AudioTrack
             audioThread = Executors.newSingleThreadExecutor()
             audioThread?.execute {
                 try {
-                    audioRecord?.startRecording()
-                    audioTrack?.play()
-                    isAudioPlaying = true
-                    
-                    Log.i(TAG, "Audio passthrough started - ${SAMPLE_RATE}Hz stereo")
-                    
-                    val buffer = ByteArray(bufferSize)
+                    Log.i(TAG, "Audio passthrough (UAC) started")
                     while (isAudioPlaying) {
-                        val bytesRead = audioRecord?.read(buffer, 0, buffer.size) ?: -1
-                        if (bytesRead > 0) {
-                            audioTrack?.write(buffer, 0, bytesRead)
-                        } else if (bytesRead < 0) {
-                            Log.e(TAG, "Error reading audio: $bytesRead")
-                            break
+                        val raw = audioStrategy?.read()
+                        if (raw != null) {
+                            audioTrack?.write(raw.data, 0, raw.size)
+                        } else {
+                            // belum ada data baru, jangan busy-loop
+                            Thread.sleep(5)
                         }
                     }
                 } catch (e: Exception) {
@@ -430,9 +413,8 @@ class PreviewActivity : AppCompatActivity() {
                     e.printStackTrace()
                 }
             }
-            
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start audio passthrough: ${e.message}")
+            Log.e(TAG, "Failed to setup AudioTrack: ${e.message}")
             e.printStackTrace()
         }
     }
@@ -452,16 +434,14 @@ class PreviewActivity : AppCompatActivity() {
                 audioThread = null
             }
             
-            audioRecord?.let {
+            audioStrategy?.let {
                 try {
-                    if (it.state == AudioRecord.STATE_INITIALIZED) {
-                        it.stop()
-                    }
+                    it.stopRecording()
+                    it.releaseAudioRecord()
                 } catch (e: Exception) {
-                    Log.w(TAG, "Error stopping AudioRecord: ${e.message}")
+                    Log.w(TAG, "Error stopping AudioStrategyUAC: ${e.message}")
                 }
-                it.release()
-                audioRecord = null
+                audioStrategy = null
             }
             
             audioTrack?.let {
