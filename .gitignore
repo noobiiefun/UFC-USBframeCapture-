@@ -1,28 +1,41 @@
-*.class
-*.dex
-*.so
-*.aar
+```
+# Android build artifacts
 *.apk
-*.jar
-*.war
-*.ear
-local.properties
+*.aar
+*.dex
+
+# Android cache and build directories
+.build/
+app/build/
 .gradle/
-build/
-.externalNativeBuild
-.cxx/
-*.keystore
-*.jks
+local.properties
+
+# IDE files
+.idea/
+*.iml
+*.iws
+.vscode/
+
+# Log files
 *.log
+
+# Temp files
 *.tmp
-*.swp
+*~
 .DS_Store
 Thumbs.db
-.vscode/
-.idea/
-node_modules/
-venv/
-.venv/
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Coverage reports
+coverage/
+htmlcov/
+*.coverage
+
+# Python artifacts (if any Python in project)
 __pycache__/
 *.pyc
 *.pyo
@@ -30,32 +43,8 @@ __pycache__/
 .Python
 *.so
 *.egg-info/
+.eggs/
 dist/
-target/
-.mypy_cache/
-.pytest_cache/
-.coverage
-coverage/
-htmlcov/
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+build/
+*.egg
+```
