@@ -74,11 +74,11 @@ class PreviewActivity : AppCompatActivity() {
     private var btnRotate: Button? = null
     private var btnStop: Button? = null
     
-    // Rotation state - default to landscape (horizontal)
+    // Rotation state - default to landscape (0 degrees)
     private var currentRotationIndex = 0
     private val rotationAngles = listOf(
-        RotateType.HORIZONTAL,  // Default: landscape/horizontal
-        RotateType.VERTICAL     // Portrait/vertical
+        RotateType.ANGLE_0,       // Default: landscape/horizontal
+        RotateType.ANGLE_90       // Portrait/vertical
     )
     
     // Auto-hide handler
