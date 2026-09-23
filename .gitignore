@@ -1,1 +1,6 @@
-(empty)
+# Editors/IDE
+.idea/
+
+# Android build artifacts and logs
+*.log
+local.properties
