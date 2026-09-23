@@ -18,17 +18,20 @@ class StreamConfig(context: Context) {
         get() = prefs.getString("stream_key", "") ?: ""
         set(value) = prefs.edit().putString("stream_key", value.trim()).apply()
 
+    // Default dikembalikan ke 720p (1280x720) sesuai target performa di README.
     var resolutionWidth: Int
-        get() = prefs.getInt("res_w", 854)
+        get() = prefs.getInt("res_w", 1280)
         set(value) = prefs.edit().putInt("res_w", value).apply()
 
     var resolutionHeight: Int
-        get() = prefs.getInt("res_h", 480)
+        get() = prefs.getInt("res_h", 720)
         set(value) = prefs.edit().putInt("res_h", value).apply()
 
+    // FPS minimal 30 — getter memaksa clamp, jadi walau ada nilai lama/nyasar
+    // yang lebih rendah tersimpan di prefs, stream tetap jalan >= 30fps.
     var fps: Int
-        get() = prefs.getInt("fps", 30)
-        set(value) = prefs.edit().putInt("fps", value).apply()
+        get() = prefs.getInt("fps", 30).coerceAtLeast(30)
+        set(value) = prefs.edit().putInt("fps", value.coerceAtLeast(30)).apply()
 
     var bitrateKbps: Int
         get() = prefs.getInt("bitrate", 2500)
@@ -41,6 +44,13 @@ class StreamConfig(context: Context) {
     var useMjpeg: Boolean
         get() = prefs.getBoolean("use_mjpeg", true)
         set(value) = prefs.edit().putBoolean("use_mjpeg", value).apply()
+
+    // Audio dari capture card (UAC) yang masuk ke aplikasi. Default ON supaya
+    // suara PC ikut tertangkap; switch di Settings bisa mematikan kalau
+    // capture card tertentu bikin crash native di libUACAudio.so.
+    var useDeviceMic: Boolean
+        get() = prefs.getBoolean("use_device_mic", true)
+        set(value) = prefs.edit().putBoolean("use_device_mic", value).apply()
 
     var monitorAudio: Boolean
         get() = prefs.getBoolean("monitor_audio", false)

@@ -28,6 +28,7 @@ class SettingsActivity : AppCompatActivity() {
         val spinnerFormat = findViewById<Spinner>(R.id.spinnerFormat)
         val editFps = findViewById<EditText>(R.id.editFps)
         val editBitrate = findViewById<EditText>(R.id.editBitrate)
+        val switchDeviceMic = findViewById<Switch>(R.id.switchDeviceMic)
         val switchAudioMonitor = findViewById<Switch>(R.id.switchAudioMonitor)
         val switchOpengl = findViewById<Switch>(R.id.switchOpengl)
         val radioLandscape = findViewById<RadioButton>(R.id.radioLandscape)
@@ -53,6 +54,7 @@ class SettingsActivity : AppCompatActivity() {
         
         editFps.setText(config.fps.toString())
         editBitrate.setText(config.bitrateKbps.toString())
+        switchDeviceMic.isChecked = config.useDeviceMic
         switchAudioMonitor.isChecked = config.monitorAudio
         switchOpengl.isChecked = config.useOpengl
         
@@ -71,9 +73,11 @@ class SettingsActivity : AppCompatActivity() {
             config.resolutionHeight = selectedRes[1].toInt()
             
             config.useMjpeg = spinnerFormat.selectedItemPosition == 0
-            config.fps = editFps.text.toString().toIntOrNull() ?: 30
+            // FPS minimal 30 — nilai di bawah itu dinaikkan paksa ke 30
+            config.fps = (editFps.text.toString().toIntOrNull() ?: 30).coerceAtLeast(30)
             config.bitrateKbps = editBitrate.text.toString().toIntOrNull() ?: 2500
             config.isPortrait = radioPortrait.isChecked
+            config.useDeviceMic = switchDeviceMic.isChecked
             config.monitorAudio = switchAudioMonitor.isChecked
             config.useOpengl = switchOpengl.isChecked
 

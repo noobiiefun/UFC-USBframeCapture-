@@ -88,29 +88,19 @@ class UfcCameraFragment : CameraFragment() {
             .setPreviewHeight(height)
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
-            // === WORKAROUND SEMENTARA (lihat catatan di bawah) ===
-            // SOURCE_DEV_MIC (audio UAC langsung dari capture card) DIMATIKAN
-            // dulu karena menyebabkan native crash (SIGSEGV) di libUACAudio.so
-            // saat startEncoding() dipanggil -- tepatnya di
-            // USBAudio::interface_claim_if, dipicu dari thread native AudioThread.
-            // Ini crash di kode native pihak ketiga (bukan Kotlin), jadi tidak
-            // bisa ditangkap dengan try/catch dan langsung force-close app.
-            //
-            // Kemungkinan akar masalah: descriptor USB capture card ini agak
-            // tidak standar -- terlihat dari warning "bEndpointAddress is null"
-            // yang sudah muncul di logcat SEJAK kamera dibuka (bahkan sebelum
-            // Start Live ditekan), jauh sebelum crash UAC audio terjadi.
-            //
-            // Sebagai gantinya, audio live sementara diambil dari mic internal
-            // HP (SOURCE_SYS_MIC) supaya streaming tetap bisa jalan tanpa
-            // crash. Video tetap dari capture card seperti biasa -- yang
-            // berubah cuma sumber suaranya.
-            //
-            // TODO: kalau mau coba lagi audio dari capture card (SOURCE_DEV_MIC),
-            // cek dulu apakah ada versi lebih baru dari library
-            // com.github.ernestp.AndroidUSBCamera:libausbc yang sudah
-            // menangani capture card dengan descriptor USB tidak standar.
-            .setAudioSource(CameraRequest.AudioSource.SOURCE_SYS_MIC)
+            .setAudioSource(
+                // === AUDIO DARI CAPTURE CARD (UAC) ===
+                // SOURCE_DEV_MIC mengambil suara HDMI dari PC lewat interface
+                // USB Audio Class capture card, sehingga suara PC ikut masuk
+                // ke aplikasi dan menjadi bagian dari output stream.
+                // Bisa dimatikan lewat Settings ("Audio dari Capture Card")
+                // kalau device tertentu memicu crash native di libUACAudio.so
+                // (kasus lama: SIGSEGV di USBAudio::interface_claim_if untuk
+                // dongle dengan descriptor USB tidak standar -- fallback ke
+                // mic internal HP jika switch dimatikan).
+                if (config.useDeviceMic) CameraRequest.AudioSource.SOURCE_DEV_MIC
+                else CameraRequest.AudioSource.SOURCE_SYS_MIC
+            )
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
             .setAspectRatioShow(true)
             .create()
@@ -247,6 +237,16 @@ class UfcCameraFragment : CameraFragment() {
     fun startEncoding() {
         Log.i("UfcCamera", "startEncoding() requested")
         captureStreamStart()
+        // Sinkronkan sample rate AAC di RTMP client dengan yang benar-benar
+        // dipakai encoder (dari capture card UAC, umumnya 48kHz; sebagian
+        // device 44.1kHz). Kalau header FLV bilang 44.1kHz padahal stream-nya
+        // 48kHz, audio di YouTube akan terdengar cepat/pelan (chipmunk).
+        try {
+            val sr = getAudioStrategy()?.getSampleRate() ?: 0
+            if (sr > 0) rtmpPusher?.setAudioSampleRate(sr)
+        } catch (e: Throwable) {
+            Log.w("UfcCamera", "Gagal baca sample rate audio strategy: ${e.message}")
+        }
     }
 
     fun stopEncoding() {
