@@ -9,6 +9,7 @@ import com.jiangdg.ausbc.base.CameraFragment
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
 import com.jiangdg.ausbc.camera.bean.CameraRequest
+import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
 import com.ufc.app.StatusRepository
@@ -234,6 +235,25 @@ class UfcCameraFragment : CameraFragment() {
         }
     }
 
+    private fun fetchAudioSampleRate(): Int {
+        val camera = getCurrentCamera() ?: return 0
+        var clazz: Class<*>? = camera.javaClass
+        while (clazz != null && clazz != Any::class.java) {
+            try {
+                val method = clazz.getDeclaredMethod("getAudioStrategy")
+                method.isAccessible = true
+                val strategy = method.invoke(camera) as? IAudioStrategy
+                return strategy?.getSampleRate() ?: 0
+            } catch (_: NoSuchMethodException) {
+                clazz = clazz.superclass
+            } catch (e: Exception) {
+                Log.w("UfcCamera", "Gagal me-reflect getAudioStrategy: ${e.message}")
+                break
+            }
+        }
+        return 0
+    }
+
     fun startEncoding() {
         Log.i("UfcCamera", "startEncoding() requested")
         captureStreamStart()
@@ -242,7 +262,7 @@ class UfcCameraFragment : CameraFragment() {
         // device 44.1kHz). Kalau header FLV bilang 44.1kHz padahal stream-nya
         // 48kHz, audio di YouTube akan terdengar cepat/pelan (chipmunk).
         try {
-            val sr = getAudioStrategy()?.getSampleRate() ?: 0
+            val sr = fetchAudioSampleRate()
             if (sr > 0) rtmpPusher?.setAudioSampleRate(sr)
         } catch (e: Throwable) {
             Log.w("UfcCamera", "Gagal baca sample rate audio strategy: ${e.message}")

@@ -1,0 +1,34 @@
+[
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\layout_activity_preview.xml.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\layout\\activity_preview.xml"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\drawable_splash_logo.png.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\drawable\\splash_logo.png"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\drawable_splash_background.xml.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\drawable\\splash_background.xml"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\xml_device_filter.xml.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\xml\\device_filter.xml"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\mipmap-xxxhdpi\\ic_launcher.png"
+    },
+    {
+        "merged": "com.ufc.app-debug-40:/layout_activity_settings.xml.flat",
+        "source": "com.ufc.app-main-42:/layout/activity_settings.xml"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\layout_activity_main.xml.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\layout\\activity_main.xml"
+    },
+    {
+        "merged": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-debug-40:\\layout_activity_settings.xml.flat",
+        "source": "C:\\Users\\Nuclear CroSS X\\.gradle\\daemon\\9.3.0\\com.ufc.app-main-42:\\layout\\activity_settings.xml"
+    }
+]
