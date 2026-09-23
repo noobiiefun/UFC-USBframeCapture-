@@ -15,9 +15,10 @@ import java.nio.ByteBuffer
 /**
  * Membungkus komponen push RTMP menggunakan RtmpClient dasar (RootEncoder).
  *
- * Audio diambil dari mic internal HP (lihat catatan SOURCE_SYS_MIC di
- * UfcCameraFragment.getCameraRequest()), diteruskan dari
- * UfcCameraFragment.onDeviceAudioData().
+ * Audio diambil dari capture card via UAC / SOURCE_DEV_MIC (lihat
+ * UfcCameraFragment.getCameraRequest(); fallback ke mic internal HP jika
+ * switch "Audio dari Capture Card" di Settings dimatikan), diteruskan dari
+ * callback AAC ke onDeviceAudioData().
  *
  * === FIX #1 (sudah ada) -- race condition penyebab "Broken pipe" ===
  * Semua akses ke `rtmpClient` (baca isStreaming, sendVideo, sendAudio,
@@ -141,6 +142,23 @@ class RtmpPusher {
 
     fun configure(config: Config) {
         this.config = config
+    }
+
+    /**
+     * Sinkronkan sample rate audio dengan yang terdeteksi library saat
+     * encoding dimulai (capture card UAC umumnya 48kHz, sebagian 44.1kHz).
+     * Dipanggil dari UI thread setelah camera open + captureStreamStart().
+     */
+    fun setAudioSampleRate(sampleRate: Int) {
+        if (sampleRate <= 0) return
+        synchronized(clientLock) {
+            try {
+                rtmpClient.setAudioInfo(sampleRate, true) // tetap stereo
+                Log.i(TAG, "Audio sample rate diset ke ${sampleRate}Hz")
+            } catch (e: Throwable) {
+                Log.w(TAG, "Gagal set audio info: ${e.message}")
+            }
+        }
     }
 
     fun start(context: Context) {

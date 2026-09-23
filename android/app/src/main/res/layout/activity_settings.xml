@@ -59,7 +59,7 @@
             android:id="@+id/editFps"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="FPS (15, 30, 60)"
+            android:hint="FPS (minimal 30, bisa lebih)"
             android:inputType="number" />
 
         <EditText
@@ -68,6 +68,14 @@
             android:layout_height="wrap_content"
             android:hint="Bitrate (kbps)"
             android:inputType="number" />
+
+        <Switch
+            android:id="@+id/switchDeviceMic"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:checked="true"
+            android:text="Audio dari Capture Card (suara PC ikut ke stream)" />
 
         <Switch
             android:id="@+id/switchAudioMonitor"

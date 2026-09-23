@@ -235,8 +235,10 @@ class MainActivity : AppCompatActivity() {
             missing.add("Kamera")
         }
         
-        // Hanya minta Mic jika audio dinyalakan
-        if (config.monitorAudio && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+        // Hanya minta Mic jika audio dinyalakan.
+        // Catatan: SOURCE_DEV_MIC (audio capture card via UAC) juga butuh izin
+        // RECORD_AUDIO — tanpa itu startEncoding() bisa gagal/gak ada suara.
+        if ((config.monitorAudio || config.useDeviceMic) && ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
             missing.add("Microphone")
         }
         
