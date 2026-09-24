@@ -1,0 +1,221 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.ufc.app"
+4    android:versionCode="1"
+5    android:versionName="0.1.0-skeleton" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="36" />
+10
+11    <uses-feature
+11-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:4:5-86
+12        android:name="android.hardware.usb.host"
+12-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:4:19-59
+13        android:required="true" />
+13-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:4:60-83
+14
+15    <uses-permission android:name="android.permission.INTERNET" />
+15-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:6:5-67
+15-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:6:22-64
+16    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+16-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:7:5-76
+16-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:7:22-73
+17    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+17-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:8:5-79
+17-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:8:22-76
+18    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+18-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:9:5-71
+18-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:9:22-68
+19    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+19-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:10:5-77
+19-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:10:22-74
+20    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+20-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:11:5-77
+20-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:11:22-74
+21    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+21-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:12:5-84
+21-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:12:22-81
+22    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+22-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:13:5-88
+22-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:13:22-85
+23    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+23-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:14:5-94
+23-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:14:22-91
+24    <uses-permission android:name="android.permission.WAKE_LOCK" />
+24-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:15:5-68
+24-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:15:22-65
+25    <uses-permission android:name="android.permission.CAMERA" />
+25-->[com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\38d5339c6aed9f8df2ac055d55692f7c\workspace\transformed\jetified-libausbc-3.6.0\AndroidManifest.xml:9:5-65
+25-->[com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\38d5339c6aed9f8df2ac055d55692f7c\workspace\transformed\jetified-libausbc-3.6.0\AndroidManifest.xml:9:22-62
+26    <uses-permission android:name="android.permission.USB_PERMISSION" />
+26-->[com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\38d5339c6aed9f8df2ac055d55692f7c\workspace\transformed\jetified-libausbc-3.6.0\AndroidManifest.xml:12:5-73
+26-->[com.github.ernestp.AndroidUSBCamera:libausbc:3.6.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\38d5339c6aed9f8df2ac055d55692f7c\workspace\transformed\jetified-libausbc-3.6.0\AndroidManifest.xml:12:22-70
+27
+28    <permission
+28-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:22:5-24:47
+29        android:name="com.ufc.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+29-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:23:9-81
+30        android:protectionLevel="signature" />
+30-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:24:9-44
+31
+32    <uses-permission android:name="com.ufc.app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+32-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:26:5-97
+32-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:26:22-94
+33
+34    <application
+34-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:17:5-61:19
+35        android:allowBackup="true"
+35-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:18:9-35
+36        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+36-->[androidx.core:core:1.18.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\ffa2539a9363e9107a330c5cd1227363\workspace\transformed\core-1.18.0\AndroidManifest.xml:28:18-86
+37        android:debuggable="true"
+38        android:extractNativeLibs="false"
+39        android:icon="@mipmap/ic_launcher"
+39-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:19:9-43
+40        android:label="UFC - USB Frame Capture"
+40-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:20:9-48
+41        android:roundIcon="@mipmap/ic_launcher"
+41-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:21:9-48
+42        android:supportsRtl="true"
+42-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:22:9-35
+43        android:theme="@style/Theme.UFC" >
+43-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:23:9-41
+44        <service
+44-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:25:9-29:81
+45            android:name="com.ufc.app.stream.StreamService"
+45-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:26:13-49
+46            android:enabled="true"
+46-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:27:13-35
+47            android:exported="false"
+47-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:28:13-37
+48            android:foregroundServiceType="camera|microphone|connectedDevice" />
+48-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:29:13-78
+49
+50        <activity
+50-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:31:9-33:40
+51            android:name="com.ufc.app.ui.SettingsActivity"
+51-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:32:13-48
+52            android:label="Settings" />
+52-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:33:13-37
+53        <activity
+53-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:35:9-42:109
+54            android:name="com.ufc.app.ui.PreviewActivity"
+54-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:36:13-47
+55            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+55-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:42:13-106
+56            android:exported="false"
+56-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:39:13-37
+57            android:label="Preview Mode"
+57-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:37:13-41
+58            android:launchMode="singleTop"
+58-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:40:13-43
+59            android:screenOrientation="landscape"
+59-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:41:13-50
+60            android:theme="@style/Theme.App.Starting" />
+60-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:38:13-54
+61        <activity
+61-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:44:9-60:20
+62            android:name="com.ufc.app.ui.MainActivity"
+62-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:45:13-44
+63            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize"
+63-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:49:13-106
+64            android:exported="true"
+64-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:47:13-36
+65            android:launchMode="singleTop"
+65-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:48:13-43
+66            android:theme="@style/Theme.App.Starting" >
+66-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:46:13-54
+67            <intent-filter>
+67-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:50:13-53:29
+68                <action android:name="android.intent.action.MAIN" />
+68-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:51:17-69
+68-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:51:25-66
+69
+70                <category android:name="android.intent.category.LAUNCHER" />
+70-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:52:17-77
+70-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:52:27-74
+71            </intent-filter>
+72            <intent-filter>
+72-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:54:13-56:29
+73                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+73-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:55:17-90
+73-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:55:25-87
+74            </intent-filter>
+75
+76            <meta-data
+76-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:57:13-59:57
+77                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+77-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:58:17-79
+78                android:resource="@xml/device_filter" />
+78-->D:\project\UFC-USBframeCapture-\android\app\src\main\AndroidManifest.xml:59:17-54
+79        </activity>
+80
+81        <provider
+81-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:24:9-32:20
+82            android:name="androidx.startup.InitializationProvider"
+82-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:25:13-67
+83            android:authorities="com.ufc.app.androidx-startup"
+83-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:26:13-68
+84            android:exported="false" >
+84-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:27:13-37
+85            <meta-data
+85-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+86                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+86-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:30:17-75
+87                android:value="androidx.startup" />
+87-->[androidx.emoji2:emoji2:1.3.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\bf2be6ab79b3f3ed5679dfd56487cfdc\workspace\transformed\jetified-emoji2-1.3.0\AndroidManifest.xml:31:17-49
+88            <meta-data
+88-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a7d6ab26de642b858115f22ca0bb732b\workspace\transformed\jetified-lifecycle-process-2.6.2\AndroidManifest.xml:29:13-31:52
+89                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+89-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a7d6ab26de642b858115f22ca0bb732b\workspace\transformed\jetified-lifecycle-process-2.6.2\AndroidManifest.xml:30:17-78
+90                android:value="androidx.startup" />
+90-->[androidx.lifecycle:lifecycle-process:2.6.2] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a7d6ab26de642b858115f22ca0bb732b\workspace\transformed\jetified-lifecycle-process-2.6.2\AndroidManifest.xml:31:17-49
+91            <meta-data
+91-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:29:13-31:52
+92                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+92-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:30:17-85
+93                android:value="androidx.startup" />
+93-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:31:17-49
+94        </provider>
+95
+96        <receiver
+96-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:34:9-52:20
+97            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+97-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:35:13-76
+98            android:directBootAware="false"
+98-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:36:13-44
+99            android:enabled="true"
+99-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:37:13-35
+100            android:exported="true"
+100-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:38:13-36
+101            android:permission="android.permission.DUMP" >
+101-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:39:13-57
+102            <intent-filter>
+102-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:40:13-42:29
+103                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+103-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:17-91
+103-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:41:25-88
+104            </intent-filter>
+105            <intent-filter>
+105-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:43:13-45:29
+106                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+106-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:17-85
+106-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:44:25-82
+107            </intent-filter>
+108            <intent-filter>
+108-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:46:13-48:29
+109                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+109-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:17-88
+109-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:47:25-85
+110            </intent-filter>
+111            <intent-filter>
+111-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:49:13-51:29
+112                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+112-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:17-95
+112-->[androidx.profileinstaller:profileinstaller:1.4.0] C:\Users\Nuclear CroSS X\.gradle\caches\9.3.0\transforms\a5f1b11fce110d75daa398dc3225c3f0\workspace\transformed\jetified-profileinstaller-1.4.0\AndroidManifest.xml:50:25-92
+113            </intent-filter>
+114        </receiver>
+115    </application>
+116
+117</manifest>
