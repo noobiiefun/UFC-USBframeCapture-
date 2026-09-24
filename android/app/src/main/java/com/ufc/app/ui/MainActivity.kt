@@ -206,6 +206,13 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (::cameraFragment.isInitialized) {
+            cameraFragment.updateAudioMonitoring(config.monitorAudio)
+        }
+    }
+
     override fun onStart() {
         super.onStart()
         statusServer = StatusServer().apply { start(SOCKET_TIMEOUT_MS, false) }

@@ -53,7 +53,7 @@ class StreamConfig(context: Context) {
         set(value) = prefs.edit().putBoolean("use_device_mic", value).apply()
 
     var monitorAudio: Boolean
-        get() = prefs.getBoolean("monitor_audio", false)
+        get() = prefs.getBoolean("monitor_audio", true)
         set(value) = prefs.edit().putBoolean("monitor_audio", value).apply()
 
     var useOpengl: Boolean

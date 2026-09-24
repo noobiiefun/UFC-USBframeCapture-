@@ -315,8 +315,7 @@ class PreviewActivity : AppCompatActivity() {
      * di situ, makanya sebelumnya audio tidak masuk walau device sudah dipilih).
      */
     private fun startAudioPassthrough() {
-        if (isAudioPlaying) {
-            Log.w(TAG, "Audio already playing")
+        if (isFinishing || isDestroyed || isAudioPlaying) {
             return
         }
         
@@ -333,10 +332,10 @@ class PreviewActivity : AppCompatActivity() {
             audioStrategy = strategy
             
             // Beri sedikit waktu untuk UAC handler negosiasi format asli device
-            // (sample rate/bit depth/channel capture card BISA BEDA-BEDA per device,
-            // jangan diasumsikan 48000Hz stereo 16-bit seperti kode lama).
             Handler(Looper.getMainLooper()).postDelayed({
-                setupAudioTrackAndStartPolling(strategy)
+                if (!isFinishing && !isDestroyed) {
+                    setupAudioTrackAndStartPolling(strategy)
+                }
             }, 300)
             
         } catch (e: Exception) {

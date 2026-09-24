@@ -81,6 +81,8 @@ class RtmpPusher {
     @Volatile private var lastConnectAttemptMs = 0L
     @Volatile private var hasShownFailureToast = false
     @Volatile private var consecutiveFailures = 0
+    @Volatile private var configuredAudioSampleRate = AUDIO_SAMPLE_RATE
+    @Volatile private var configuredAudioIsStereo = true
 
     // === LOCK TUNGGAL untuk semua akses ke rtmpClient (lihat catatan FIX #1) ===
     private val clientLock = Any()
@@ -145,20 +147,25 @@ class RtmpPusher {
     }
 
     /**
-     * Sinkronkan sample rate audio dengan yang terdeteksi library saat
-     * encoding dimulai (capture card UAC umumnya 48kHz, sebagian 44.1kHz).
-     * Dipanggil dari UI thread setelah camera open + captureStreamStart().
+     * Sinkronkan sample rate dan channel mode audio dengan yang terdeteksi library
+     * saat encoding dimulai.
      */
-    fun setAudioSampleRate(sampleRate: Int) {
+    fun setAudioInfo(sampleRate: Int, isStereo: Boolean) {
         if (sampleRate <= 0) return
         synchronized(clientLock) {
+            configuredAudioSampleRate = sampleRate
+            configuredAudioIsStereo = isStereo
             try {
-                rtmpClient.setAudioInfo(sampleRate, true) // tetap stereo
-                Log.i(TAG, "Audio sample rate diset ke ${sampleRate}Hz")
+                rtmpClient.setAudioInfo(sampleRate, isStereo)
+                Log.i(TAG, "Audio info diset ke ${sampleRate}Hz, stereo=$isStereo")
             } catch (e: Throwable) {
                 Log.w(TAG, "Gagal set audio info: ${e.message}")
             }
         }
+    }
+
+    fun setAudioSampleRate(sampleRate: Int) {
+        setAudioInfo(sampleRate, true)
     }
 
     fun start(context: Context) {
@@ -223,7 +230,7 @@ class RtmpPusher {
         rtmpClient.setAudioCodec(AudioCodec.AAC)
         rtmpClient.setVideoResolution(config.width, config.height)
         rtmpClient.setFps(config.fps)
-        rtmpClient.setAudioInfo(AUDIO_SAMPLE_RATE, true) // Stereo
+        rtmpClient.setAudioInfo(configuredAudioSampleRate, configuredAudioIsStereo)
 
         val sps = cachedSps
         val pps = cachedPps

@@ -117,6 +117,12 @@ class UfcCameraFragment : CameraFragment() {
                 Log.i("UfcCamera", "Camera Opened - Setting up encoding callbacks")
                 StatusRepository.update { it.copy(connected = true) }
                 setupEncodingCallbacks()
+
+                val config = StreamConfig(requireContext())
+                if (config.monitorAudio) {
+                    Log.i("UfcCamera", "Mulai audio monitoring lokal ke speaker HP")
+                    startPlayMic()
+                }
             }
             ICameraStateCallBack.State.CLOSED -> {
                 StatusRepository.update { it.copy(connected = false) }
@@ -208,42 +214,83 @@ class UfcCameraFragment : CameraFragment() {
 
     /**
      * Memisahkan SPS dan PPS dari buffer yang sudah disalin.
+     * Mendukung start code 3-byte (00 00 01) dan 4-byte (00 00 00 01) untuk
+     * kompatibilitas dengan MediaTek GPU (Helio G36 / Xiaomi Redmi A3) & Snapdragon.
      */
     private fun extractSpsPps(buffer: ByteBuffer, size: Int) {
         try {
             val data = ByteArray(size)
             buffer.get(data)
-            buffer.flip() // Kembalikan ke posisi 0 setelah dibaca
-            
-            // Cari start code 00 00 00 01 untuk memisahkan SPS dan PPS
-            var ppsIndex = -1
-            for (i in 4 until size - 4) {
-                if (data[i] == 0.toByte() && data[i+1] == 0.toByte() && 
-                    data[i+2] == 0.toByte() && data[i+3] == 1.toByte()) {
-                    ppsIndex = i
-                    break
+            buffer.flip()
+
+            val nalIndices = mutableListOf<Pair<Int, Int>>() // Pair(index, prefixLength)
+            var i = 0
+            while (i <= size - 3) {
+                if (data[i] == 0.toByte() && data[i + 1] == 0.toByte()) {
+                    if (i <= size - 4 && data[i + 2] == 0.toByte() && data[i + 3] == 1.toByte()) {
+                        nalIndices.add(Pair(i, 4))
+                        i += 4
+                        continue
+                    } else if (data[i + 2] == 1.toByte()) {
+                        nalIndices.add(Pair(i, 3))
+                        i += 3
+                        continue
+                    }
+                }
+                i++
+            }
+
+            var spsStart = -1
+            var spsEnd = -1
+            var ppsStart = -1
+            var ppsEnd = -1
+
+            if (nalIndices.isNotEmpty()) {
+                for (k in nalIndices.indices) {
+                    val (start, prefixLen) = nalIndices[k]
+                    val nalType = if (start + prefixLen < size) (data[start + prefixLen].toInt() and 0x1F) else -1
+                    val end = if (k + 1 < nalIndices.size) nalIndices[k + 1].first else size
+                    if (nalType == 7) { // SPS
+                        spsStart = start
+                        spsEnd = end
+                    } else if (nalType == 8) { // PPS
+                        ppsStart = start
+                        ppsEnd = end
+                    }
                 }
             }
-            
-            if (ppsIndex != -1) {
-                val sps = ByteBuffer.wrap(data, 0, ppsIndex)
-                val pps = ByteBuffer.wrap(data, ppsIndex, size - ppsIndex)
+
+            if (spsStart != -1 && ppsStart != -1 && spsEnd > spsStart && ppsEnd > ppsStart) {
+                val sps = ByteBuffer.wrap(data, spsStart, spsEnd - spsStart)
+                val pps = ByteBuffer.wrap(data, ppsStart, ppsEnd - ppsStart)
+                rtmpPusher?.setVideoMetadata(sps, pps)
+            } else if (nalIndices.size >= 2) {
+                val (firstIdx, _) = nalIndices[0]
+                val (secondIdx, _) = nalIndices[1]
+                val sps = ByteBuffer.wrap(data, firstIdx, secondIdx - firstIdx)
+                val pps = ByteBuffer.wrap(data, secondIdx, size - secondIdx)
                 rtmpPusher?.setVideoMetadata(sps, pps)
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            Log.e("UfcCamera", "Gagal ekstraksi SPS/PPS: ${e.message}")
         }
     }
 
-    private fun fetchAudioSampleRate(): Int {
-        val camera = getCurrentCamera() ?: return 0
+    data class AudioConfig(val sampleRate: Int, val isStereo: Boolean)
+
+    private fun fetchAudioConfig(): AudioConfig? {
+        val camera = getCurrentCamera() ?: return null
         var clazz: Class<*>? = camera.javaClass
         while (clazz != null && clazz != Any::class.java) {
             try {
                 val method = clazz.getDeclaredMethod("getAudioStrategy")
                 method.isAccessible = true
                 val strategy = method.invoke(camera) as? IAudioStrategy
-                return strategy?.getSampleRate() ?: 0
+                if (strategy != null) {
+                    val sr = strategy.getSampleRate()
+                    val isStereo = strategy.getChannelCount() > 1
+                    return AudioConfig(sr, isStereo)
+                }
             } catch (_: NoSuchMethodException) {
                 clazz = clazz.superclass
             } catch (e: Exception) {
@@ -251,21 +298,27 @@ class UfcCameraFragment : CameraFragment() {
                 break
             }
         }
-        return 0
+        return null
     }
 
     fun startEncoding() {
         Log.i("UfcCamera", "startEncoding() requested")
         captureStreamStart()
-        // Sinkronkan sample rate AAC di RTMP client dengan yang benar-benar
-        // dipakai encoder (dari capture card UAC, umumnya 48kHz; sebagian
-        // device 44.1kHz). Kalau header FLV bilang 44.1kHz padahal stream-nya
-        // 48kHz, audio di YouTube akan terdengar cepat/pelan (chipmunk).
         try {
-            val sr = fetchAudioSampleRate()
-            if (sr > 0) rtmpPusher?.setAudioSampleRate(sr)
+            val audioCfg = fetchAudioConfig()
+            if (audioCfg != null && audioCfg.sampleRate > 0) {
+                rtmpPusher?.setAudioInfo(audioCfg.sampleRate, audioCfg.isStereo)
+            }
         } catch (e: Throwable) {
-            Log.w("UfcCamera", "Gagal baca sample rate audio strategy: ${e.message}")
+            Log.w("UfcCamera", "Gagal baca audio config: ${e.message}")
+        }
+    }
+
+    fun updateAudioMonitoring(enable: Boolean) {
+        if (enable) {
+            startPlayMic()
+        } else {
+            stopPlayMic()
         }
     }
 
