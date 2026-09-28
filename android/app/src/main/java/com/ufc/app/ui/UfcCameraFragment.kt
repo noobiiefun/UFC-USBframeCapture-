@@ -8,11 +8,13 @@ import android.widget.FrameLayout
 import com.jiangdg.ausbc.base.CameraFragment
 import com.jiangdg.ausbc.callback.ICameraStateCallBack
 import com.jiangdg.ausbc.callback.IEncodeDataCallBack
+import com.jiangdg.ausbc.callback.IPreviewDataCallBack
 import com.jiangdg.ausbc.camera.bean.CameraRequest
 import com.jiangdg.ausbc.encode.audio.IAudioStrategy
 import com.jiangdg.ausbc.widget.AspectRatioTextureView
 import com.jiangdg.ausbc.widget.IAspectRatio
 import com.ufc.app.StatusRepository
+import com.ufc.app.model.AudioMode
 import com.ufc.app.model.StreamConfig
 import com.ufc.app.stream.RtmpPusher
 import java.nio.ByteBuffer
@@ -22,13 +24,26 @@ import java.nio.ByteBuffer
  */
 class UfcCameraFragment : CameraFragment() {
 
-    private var previewView: AspectRatioTextureView? = null
+    private var previewView: IAspectRatio? = null
     private var container: FrameLayout? = null
     private var videoBufferCopy: ByteBuffer? = null
     private var audioBufferCopy: ByteBuffer? = null
     private var isClosing = false
 
     var rtmpPusher: RtmpPusher? = null
+
+    // Penghitung FPS aktual (frame preview yang benar-benar masuk)
+    val fpsCounter = FpsCounter()
+
+    /** Callback ke activity untuk menampilkan FPS aktual di overlay. */
+    var onFpsUpdate: ((Int) -> Unit)? = null
+
+    private val previewFpsCallback = object : IPreviewDataCallBack {
+        override fun onPreviewData(data: ByteArray?, width: Int, height: Int, format: IPreviewDataCallBack.DataFormat?) {
+            if (data == null) return
+            fpsCounter.tick()
+        }
+    }
 
     override fun getRootView(inflater: LayoutInflater, container: ViewGroup?): View {
         val root = FrameLayout(requireContext())
@@ -39,7 +54,15 @@ class UfcCameraFragment : CameraFragment() {
 
     override fun getCameraView(): IAspectRatio? {
         if (previewView == null) {
-            previewView = AspectRatioTextureView(requireContext())
+            val config = StreamConfig(requireContext())
+            previewView = if (config.useOpengl) {
+                // OpenGL hanya mendukung AspectRatioTextureView bawaan (tidak bisa stretch)
+                AspectRatioTextureView(requireContext())
+            } else {
+                StretchableTextureView(requireContext()).apply {
+                    setStretch(config.stretchPreview)
+                }
+            }
         }
         return previewView
     }
@@ -56,6 +79,14 @@ class UfcCameraFragment : CameraFragment() {
     override fun onStop() {
         super.onStop()
         unRegisterMultiCamera()
+    }
+
+    /**
+     * Ganti mode tampilan tanpa buka ulang kamera:
+     * stretch = penuhi layar (boleh gepeng), biasa = jaga rasio aspek.
+     */
+    fun applyStretchMode(stretch: Boolean) {
+        (previewView as? StretchableTextureView)?.setStretch(stretch)
     }
 
     override fun getCameraRequest(): CameraRequest {
@@ -90,20 +121,23 @@ class UfcCameraFragment : CameraFragment() {
             .setRenderMode(if (config.useOpengl) CameraRequest.RenderMode.OPENGL else CameraRequest.RenderMode.NORMAL)
             .setDefaultRotateType(com.jiangdg.ausbc.render.env.RotateType.ANGLE_0)
             .setAudioSource(
-                // === AUDIO DARI CAPTURE CARD (UAC) ===
-                // SOURCE_DEV_MIC mengambil suara HDMI dari PC lewat interface
-                // USB Audio Class capture card, sehingga suara PC ikut masuk
-                // ke aplikasi dan menjadi bagian dari output stream.
-                // Bisa dimatikan lewat Settings ("Audio dari Capture Card")
-                // kalau device tertentu memicu crash native di libUACAudio.so
+                // === PILIHAN AUDIO (Settings) ===
+                //  - Capture Card (UAC) -> SOURCE_DEV_MIC : suara PC dari HDMI ikut tertangkap
+                //  - Mic HP             -> SOURCE_SYS_MIC : mic internal handphone
+                //  - Tanpa audio        -> SOURCE_SYS_MIC (source wajib diisi library;
+                //       data AAC-nya nanti dibuang, tidak diteruskan ke pusher)
+                // SOURCE_DEV_MIC butuh izin RECORD_AUDIO. Pilih Capture Card kalau
+                // device tertentu memicu crash native di libUACAudio.so
                 // (kasus lama: SIGSEGV di USBAudio::interface_claim_if untuk
                 // dongle dengan descriptor USB tidak standar -- fallback ke
                 // mic internal HP jika switch dimatikan).
-                if (config.useDeviceMic) CameraRequest.AudioSource.SOURCE_DEV_MIC
+                if (config.audioSourceMode == AudioMode.DEV_MIC) CameraRequest.AudioSource.SOURCE_DEV_MIC
                 else CameraRequest.AudioSource.SOURCE_SYS_MIC
             )
             .setPreviewFormat(if (config.useMjpeg) CameraRequest.PreviewFormat.FORMAT_MJPEG else CameraRequest.PreviewFormat.FORMAT_YUYV)
-            .setAspectRatioShow(true)
+            // setAspectRatioShow(true) = jaga rasio (letterbox/"biasa"),
+            // false = penuhi container (stretch). Dipilih dari Settings.
+            .setAspectRatioShow(!config.stretchPreview)
             .create()
     }
 
@@ -117,15 +151,20 @@ class UfcCameraFragment : CameraFragment() {
                 Log.i("UfcCamera", "Camera Opened - Setting up encoding callbacks")
                 StatusRepository.update { it.copy(connected = true) }
                 setupEncodingCallbacks()
+                // Daftarkan callback frame preview untuk hitung FPS aktual.
+                // Enkode H264/AAC tetap jalan, tapi audio AAC hanya diteruskan
+                // ke pusher kalau sumber audio dipilih (bukan "Tidak ada").
+                addPreviewDataCallBack(previewFpsCallback)
 
                 val config = StreamConfig(requireContext())
-                if (config.monitorAudio) {
+                if (config.monitorAudio && config.audioSourceMode != AudioMode.NONE) {
                     Log.i("UfcCamera", "Mulai audio monitoring lokal ke speaker HP")
                     startPlayMic()
                 }
             }
             ICameraStateCallBack.State.CLOSED -> {
                 StatusRepository.update { it.copy(connected = false) }
+                removePreviewDataCallBack(previewFpsCallback)
                 captureStreamStop()
                 stopPlayMic()
             }
@@ -195,10 +234,14 @@ class UfcCameraFragment : CameraFragment() {
                             rtmpPusher?.onVideoData(target, 0, size, timestampUs, false)
                         }
                         IEncodeDataCallBack.DataType.AAC -> {
-                            // Audio dari mic internal HP (lihat catatan SOURCE_SYS_MIC
-                            // di getCameraRequest()), diteruskan langsung sebagai raw AAC
-                            // (tanpa ADTS, sesuai kontrak IEncodeDataCallBack).
-                            rtmpPusher?.onDeviceAudioData(target, size, timestampUs)
+                            // Audio AAC dari sumber yang dipilih di Settings
+                            // (capture card UAC / mic HP), raw AAC tanpa ADTS.
+                            // Untuk mode "Tanpa audio", source tetap SYS_MIC (wajib
+                            // diisi library) tapi datanya dibuang di sini supaya
+                            // stream tidak punya track audio.
+                            if (StreamConfig(requireContext()).audioSourceMode != AudioMode.NONE) {
+                                rtmpPusher?.onDeviceAudioData(target, size, timestampUs)
+                            }
                         }
                     }
                 } catch (e: Exception) {
